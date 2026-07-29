@@ -728,6 +728,13 @@ class KeyboardTeleopRobust(Node):
             k, self._pending_gui_key = self._pending_gui_key, ''
             return k
         if self.settings is None:
+            # stdin 이 tty 가 아니면(웹 GUI 가 stdin=DEVNULL 로 띄운 경우)
+            # 읽지 않는다. /dev/null 은 항상 readable 이라 select 가 즉시
+            # 반환하고 readline() 은 EOF('')를 계속 돌려주는데, 그걸 50Hz
+            # 루프에서 반복하면 executor 가 굶어 노드가 멈춘다(실측).
+            # 이 경우 조종은 /gui/key 토픽으로만 들어온다.
+            if not sys.stdin.isatty():
+                return ''
             rlist, _, _ = select.select([sys.stdin], [], [], 0.02)
             if rlist:
                 return sys.stdin.readline().strip()
