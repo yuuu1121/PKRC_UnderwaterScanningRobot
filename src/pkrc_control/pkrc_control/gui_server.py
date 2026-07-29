@@ -29,14 +29,23 @@ from std_msgs.msg import String
 BOUNDARY = 'pkrcframe'
 
 # 누르고 있는 동안만 유효한 이동 키. 이 키를 보낸 뒤 브라우저가 조용해지면
-# 통신이 끊긴 것으로 보고 강제 정지시킨다. r/t/x/c/q 는 1회성이라 제외.
-MOTION_KEYS = frozenset({'UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd', 'w', 's'})
+# 통신이 끊긴 것으로 보고 강제 정지시킨다.
+# w/s 는 제외 — 목표 수심을 한 번 바꾸는 1회성 키이고(그 뒤는 depth hold 가
+# 유지), 홀드 반복 전송이 없어 watchdog 이 정상 조작을 단절로 오판한다.
+# r/t/c/x/q 도 같은 이유로 제외.
+MOTION_KEYS = frozenset({'UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd'})
 
 # 이 시간 동안 이동 키가 갱신되지 않으면 정지시킨다 [초].
 KEY_TIMEOUT = 0.5
 
 # 전 축 정지 + 컨트롤러 리셋 키 (두 조종 노드 공통).
 STOP_KEY = 'x'
+
+# POST /key 로 허용하는 키 전체 — 두 조종 노드가 실제로 이해하는 키만 통과시킨다.
+VALID_KEYS = frozenset({
+    'UP', 'DOWN', 'LEFT', 'RIGHT',
+    'w', 's', 'a', 'd', 'r', 't', 'x', 'q', 'c',
+})
 
 
 def mjpeg_frame(jpeg_bytes: bytes) -> bytes:
@@ -94,6 +103,12 @@ class KeyWatchdog:
     노드 자체에도 key_timeout 0.4초 decay 가 있지만(keyboard_control_teleop.py:537)
     그것은 추력을 0 으로 줄일 뿐 적분기와 heading target 을 정리하지
     않는다. x 는 컨트롤러까지 리셋한다.
+
+    스레드 안전성: touch() 는 HTTP 워커 스레드에서, check() 는 rclpy 타이머
+    스레드에서 호출되지만 lock 이 없다. CPython 의 GIL 이 단일 속성
+    읽기/쓰기를 원자적으로 만들어 주므로 위험한 인터리빙(정지가 필요한데
+    억제되는 경우)이 생기지 않아 현재는 안전하다. 필드를 추가하거나
+    여러 필드를 함께 갱신하게 되면 이 가정이 깨지니 그때는 lock 을 재검토할 것.
     """
 
     def __init__(self, timeout: float = KEY_TIMEOUT):
@@ -206,6 +221,11 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(400, 'application/json',
                            json.dumps({'ok': False,
                                        'error': 'key 가 비었습니다'}).encode())
+                return
+            if key not in VALID_KEYS:
+                self._send(400, 'application/json',
+                           json.dumps({'ok': False,
+                                       'error': f'알 수 없는 키: {key!r}'}).encode())
                 return
             node.publish_key(key)
             self._send(200, 'application/json',

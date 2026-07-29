@@ -14,7 +14,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pkrc_control.gui_server import (
-    mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS)
+    mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS, VALID_KEYS)
 
 
 def test_mjpeg_frame_structure():
@@ -104,7 +104,24 @@ def test_watchdog_ignores_nonmotion_keys():
 def test_motion_keys_content():
     """이동 키 집합이 노드의 위험 키와 일치하는지."""
     assert MOTION_KEYS == frozenset(
-        {'UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd', 'w', 's'})
+        {'UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd'})
+
+
+def test_watchdog_ignores_depth_keys():
+    """w/s 는 1회성 수심 변경 키라 감시 대상이 아니다 — 홀드 반복이 없다."""
+    wd = KeyWatchdog(timeout=0.5)
+    wd.touch('w', now=100.0)
+    assert wd.check(now=101.0) is None
+
+    wd.touch('s', now=100.0)
+    assert wd.check(now=101.0) is None
+
+
+def test_valid_keys_rejects_bogus_accepts_real():
+    """POST /key 화이트리스트 — 정의된 키만 통과."""
+    assert 'UP' in VALID_KEYS
+    assert 'w' in VALID_KEYS
+    assert 'bogus' not in VALID_KEYS
 
 
 if __name__ == '__main__':
@@ -117,4 +134,6 @@ if __name__ == '__main__':
     test_watchdog_rearms_on_new_motion_key()
     test_watchdog_ignores_nonmotion_keys()
     test_motion_keys_content()
-    print('test_gui_server: 9 passed')
+    test_watchdog_ignores_depth_keys()
+    test_valid_keys_rejects_bogus_accepts_real()
+    print('test_gui_server: 11 passed')
