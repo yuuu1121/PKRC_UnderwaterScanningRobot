@@ -142,8 +142,8 @@ MAX_CURRENT_RANGE = (0.1, 5.0)
 # (keyboard_control_teleop.py:351, keyboard_control_wall_align.py:408).
 # 틀리면 파라미터 서비스가 존재하지 않아 게인 튜닝이 전부 실패한다.
 CONTROL_NODE_NAMES = {
-    'teleop': 'keyboard_teleop_robust',
-    'wall_align': 'keyboard_teleop_wall_align',
+    'teleop': 'keyboard_control_teleop',
+    'wall_align': 'keyboard_control_wall_align',
 }
 
 # 프리셋 저장 위치. 소스 트리가 아닌 이유: 실험값이 소스를 오염시키지 않고,

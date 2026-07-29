@@ -13,7 +13,7 @@ ros2 run pkrc_control keyboard_control_robust_update_good
 
 노드가 뜨면 rqt_reconfigure GUI가 함께 실행되고, 노드를 끄면(Ctrl+C) GUI도 함께 닫힌다. 값을 바꾸면 노드 터미널에 `실시간 반영: hh_rate_kp=3.2` 로그가 찍힌다 — 이 로그가 없으면 반영되지 않은 것이다.
 
-GUI 없이 띄우려면 `--ros-args -p tuning_gui:=false`, 터미널에서 직접 바꾸려면 `ros2 param set /keyboard_teleop_robust <이름> <값>`.
+GUI 없이 띄우려면 `--ros-args -p tuning_gui:=false`, 터미널에서 직접 바꾸려면 `ros2 param set /keyboard_control_teleop <이름> <값>`.
 
 **GUI에서 바꾼 값은 소스에 저장되지 않는다.** 재시작하면 아래 기본값으로 돌아가므로, 확정한 값은 `declare_parameter`에 직접 적어야 영구 반영된다.
 

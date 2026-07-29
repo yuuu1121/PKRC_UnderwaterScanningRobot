@@ -348,7 +348,9 @@ class CascadedDepthController:
 # ─── Main Node ─────────────────────────────────────────────────────────
 class KeyboardTeleopRobust(Node):
     def __init__(self):
-        super().__init__('keyboard_teleop_robust')
+        # 런타임 노드 이름을 파일·실행파일 이름과 일치시킨다 — 둘이 다르면
+        # ros2 param set / 서비스 경로를 찾을 때 어느 쪽인지 매번 헷갈린다.
+        super().__init__('keyboard_control_teleop')
 
         # ── Parameters ─────────────────────────────────────────────────
         # Heading hold (정지·surge·sway 중 yaw 유지)

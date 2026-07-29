@@ -405,7 +405,9 @@ class KeyboardTeleopWallAlign(Node):
         ('UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd', 'w', 's', 'r', 't', 'x'))
 
     def __init__(self):
-        super().__init__('keyboard_teleop_wall_align')
+        # 런타임 노드 이름을 파일·실행파일 이름과 일치시킨다 — 둘이 다르면
+        # ros2 param set / 서비스 경로를 찾을 때 어느 쪽인지 매번 헷갈린다.
+        super().__init__('keyboard_control_wall_align')
 
         # ── Parameters ─────────────────────────────────────────────────
         # Heading hold — 원본(update_good) 값보다 낮춘 것.
