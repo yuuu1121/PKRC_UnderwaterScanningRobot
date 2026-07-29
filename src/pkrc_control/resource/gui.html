@@ -156,6 +156,11 @@
   .nodegrp input[type=number] { width: 3.6rem; background: #222;
     color: var(--fg); border: 1px solid #444; border-radius: 3px;
     padding: 2px 4px; }
+  #led-wrap { display: inline-flex; align-items: center; gap: 4px; }
+  #led { width: 90px; accent-color: var(--accent); }
+  #led:disabled { opacity: .4; }
+  #led-val { width: 2.2rem; font-variant-numeric: tabular-nums;
+             font-size: 11px; color: var(--fg); }
 
   /* ── 상태 수치 ── */
   #nums { flex: 0 0 auto; border-collapse: collapse; width: 100%;
@@ -395,6 +400,7 @@
 
     T_LIMITS = s.max_current || T_LIMITS_DEFAULT;
     serverControlNode = s.control_node || null;
+    paintLed(s.led);
     if (s.nodes) { nodeState = s.nodes; paintNodes(); }
     refreshTune();   // control_node 가 바뀌면 슬라이더를 다시 만든다
     drawThrusters(s.thrusters);
@@ -411,7 +417,7 @@
   // 한 상자에 묶어 사용자가 충돌 조합을 만들 수 없다는 걸 보이게 한다.
   const NODE_GROUPS = [
     {title: '센서 (자유롭게 켜고 끄기)',
-     keys: ['pressure', 'dvl', 'imu', 'led', 'sonar']},
+     keys: ['pressure', 'dvl', 'imu', 'led', 'sonar'], ledSlider: true},
     {title: '측위 — 하나만 (stellarHD 카메라 공유)',
      keys: ['localization', 'aruco']},
     {title: '조종 — 하나만 (CAN 버스 공유)',
@@ -442,6 +448,13 @@
           `<label>전류 한계 <input type="number" id="max-current" ` +
           `min="0.1" max="5.0" step="0.1" value="1.0"> A</label> `;
       }
+      if (g.ledSlider) {
+        // LED 는 파라미터가 아니라 lumen/brightness 토픽이라 전용 경로다.
+        fs.innerHTML +=
+          `<label id="led-wrap">밝기 <input type="range" id="led" ` +
+          `min="0" max="1" step="0.01" value="0" disabled>` +
+          `<span id="led-val">–</span></label> `;
+      }
       for (const k of g.keys) {
         const b = document.createElement('button');
         b.className = 'nodebtn';
@@ -454,6 +467,57 @@
     }
   }
   buildNodes();
+
+  // ── LED 밝기 ────────────────────────────────────────────────────
+  // 드래그 중 연속 전송하되 조종 키와 같은 20Hz 로 제한한다 — 슬라이더
+  // input 이벤트는 그보다 훨씬 자주 뜨므로 그대로 보내면 낭비다.
+  // 드래그하는 동안에는 서버가 보내주는 값으로 슬라이더를 되돌리지 않는다
+  // (손으로 잡고 있는 걸 1Hz state 가 뒤로 끌어당기면 조작이 튄다).
+  const LED_MIN_INTERVAL = 50;   // ms → 20Hz
+  let ledLastSent = 0, ledPending = null, ledDragging = false;
+
+  function ledFlush() {
+    if (ledPending === null) return;
+    const v = ledPending; ledPending = null; ledLastSent = Date.now();
+    fetch('/led', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: v}),
+    }).then(r => r.json()).then(r => {
+      if (!r.ok) console.warn('LED:', r.msg);
+    }).catch(() => {});
+  }
+
+  function ledSend(v) {
+    ledPending = v;
+    const wait = LED_MIN_INTERVAL - (Date.now() - ledLastSent);
+    if (wait <= 0) ledFlush(); else setTimeout(ledFlush, wait);
+  }
+
+  const ledEl = document.getElementById('led');
+  const ledValEl = document.getElementById('led-val');
+  if (ledEl) {
+    ledEl.addEventListener('input', () => {
+      ledDragging = true;
+      ledValEl.textContent = parseFloat(ledEl.value).toFixed(2);
+      ledSend(parseFloat(ledEl.value));
+    });
+    // 떼는 순간 마지막 값을 확실히 보낸다(throttle 로 밀린 값 보정).
+    ['pointerup', 'change', 'blur'].forEach(ev =>
+      ledEl.addEventListener(ev, () => {
+        ledDragging = false;
+        ledSend(parseFloat(ledEl.value));
+      }));
+  }
+
+  function paintLed(v) {
+    if (!ledEl) return;
+    const alive = (v !== null && v !== undefined);
+    ledEl.disabled = !alive;
+    if (!alive) { ledValEl.textContent = '–'; return; }
+    ledValEl.textContent = v.toFixed(2);
+    if (!ledDragging) ledEl.value = v;   // 조작 중엔 되돌리지 않는다
+  }
 
   async function toggleNode(key) {
     const btn = document.getElementById('nb-' + key);

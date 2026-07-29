@@ -29,7 +29,7 @@ from rcl_interfaces.srv import (DescribeParameters, GetParameters,
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import String, Float64MultiArray
+from std_msgs.msg import String, Float32, Float64MultiArray
 
 # 프로세스 종료는 이 패키지가 이미 풀어놓은 문제다 — ros2 launch 는 래퍼이고
 # 실제 자식이 별도 프로세스 그룹으로 빠져나가므로 단순 kill 이 닿지 않는다.
@@ -543,6 +543,25 @@ class _Handler(BaseHTTPRequestHandler):
                 'ok': ok, 'msg': msg, 'nodes': node.procs.status(),
             }).encode())
 
+        elif self.path == '/led':
+            # Lumen LED 밝기. 노드가 자체적으로 0~1 클램프를 하지만
+            # (lumen_node.py:141) 범위 밖 값을 그대로 흘리면 사용자가
+            # 왜 안 밝아지는지 알 수 없으므로 여기서 거절한다.
+            value = body.get('value')
+            if not _is_number(value):
+                self._send(400, 'application/json', json.dumps({
+                    'ok': False, 'msg': 'value 는 숫자여야 합니다',
+                }).encode())
+                return
+            if not (0.0 <= value <= 1.0):
+                self._send(400, 'application/json', json.dumps({
+                    'ok': False, 'msg': 'LED 밝기는 0.0~1.0 범위여야 합니다',
+                }).encode())
+                return
+            node.set_led(float(value))
+            self._send(200, 'application/json',
+                       json.dumps({'ok': True}).encode())
+
         elif self.path == '/param':
             value = body.get('value', 0.0)
             # set_param() 내부가 float(value)/int(...) 를 예외 처리 없이
@@ -637,6 +656,17 @@ class GuiServer(Node):
             String, '/teleop/wall_mode',
             lambda m: self.tc_wall_mode.put(m.data), 10)
 
+        # ── Lumen LED 밝기 ─────────────────────────────────────────────
+        # 게인 튜닝(파라미터 서비스) 경로를 쓸 수 없다 — LED 노드는
+        # lumen/brightness 토픽으로 Float32 0.0~1.0 을 받는다.
+        # lumen/state 로 현재 값을 되돌려주므로 그것을 읽어 슬라이더에
+        # 실제 밝기를 표시한다(노드가 꺼져 있으면 stale → None).
+        self.led_pub = self.create_publisher(Float32, 'lumen/brightness', 10)
+        self.tc_led = TopicCache(stale_sec=3.0)   # state 발행이 1Hz 라 여유
+        self.create_subscription(
+            Float32, 'lumen/state',
+            lambda m: self.tc_led.put(float(m.data)), 10)
+
         # ── 노드 프로세스 관리 ─────────────────────────────────────────
         self.procs = ProcManager(self.get_logger(),
                                  on_before_stop=self._emit_stop)
@@ -669,6 +699,12 @@ class GuiServer(Node):
 
     def frame_age(self) -> float:
         return self.frames.age()
+
+    def set_led(self, value: float):
+        """LED 밝기를 lumen/brightness 로 발행한다 (0.0~1.0)."""
+        msg = Float32()
+        msg.data = float(value)
+        self.led_pub.publish(msg)
 
     def publish_key(self, key: str):
         """키를 /gui/key 로 발행하고 watchdog 을 갱신한다."""
@@ -980,6 +1016,9 @@ class GuiServer(Node):
             'nodes': nodes,
             'max_current': max_current,
             'control_node': control_node,
+            # LED 노드가 보고하는 실제 밝기. 노드가 없으면 None →
+            # 브라우저가 슬라이더를 비활성으로 그린다.
+            'led': self.tc_led.get(),
         }
 
     def shutdown(self):
