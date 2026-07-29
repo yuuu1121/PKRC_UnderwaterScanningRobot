@@ -129,6 +129,14 @@ NODE_SPECS = {
     },
 }
 
+# control 그룹 토글의 기본 전류 한계 [A]. 드라이 벤치(실험실 테스트대) 작업
+# 중엔 낮은 값이 안전 기본값이다 — 실제 수조/풀에서 운용할 때만 GUI 에서
+# 값을 올린다. teleop/wall_align 기본값(3.0/3.0/5.0A)로 바로 켜면 벤치에서
+# 전 출력 추력이 나갈 수 있어 위험하다.
+DEFAULT_MAX_CURRENT = 1.0
+# GUI 가 허용하는 전류 한계 범위 [A] — 이 밖의 값(오타 등)은 거부한다.
+MAX_CURRENT_RANGE = (0.1, 5.0)
+
 # 조종 노드 키 → ROS 노드 이름 (파라미터 서비스 호출 대상).
 # 이름은 각 파일의 super().__init__() 인수와 정확히 일치해야 한다
 # (keyboard_control_teleop.py:351, keyboard_control_wall_align.py:408).
@@ -141,6 +149,21 @@ CONTROL_NODE_NAMES = {
 # 프리셋 저장 위치. 소스 트리가 아닌 이유: 실험값이 소스를 오염시키지 않고,
 # 패키지를 재빌드해도 살아남아야 한다.
 PRESET_DIR = os.path.expanduser('~/.ros/pkrc_presets')
+
+
+def build_cmd(key: str, max_current: float = None) -> list:
+    """NODE_SPECS[key]['cmd'] 에 control 그룹 전류 한계 오버라이드를 얹은
+    argv. NODE_SPECS 는 mutate 하지 않는다 — 새 리스트를 반환한다."""
+    spec = NODE_SPECS[key]
+    cmd = spec['cmd']
+    if spec['group'] == 'control':
+        cap = DEFAULT_MAX_CURRENT if max_current is None else max_current
+        cmd = cmd + [
+            '-p', f'max_current_surge:={cap}',
+            '-p', f'max_current_sway:={cap}',
+            '-p', f'max_current_heave:={cap}',
+        ]
+    return cmd
 
 
 def group_siblings(key: str) -> list:
@@ -294,7 +317,7 @@ class ProcManager:
                 self._procs.pop(k, None)
             return {k: self._alive(k) for k in NODE_SPECS}
 
-    def start(self, key: str):
+    def start(self, key: str, max_current: float = None):
         spec = NODE_SPECS.get(key)
         if spec is None:
             return False, f'알 수 없는 노드: {key}'
@@ -312,9 +335,11 @@ class ProcManager:
                         f'({spec["group"]}) 이라 동시 실행 불가')
                     self._stop_locked(sib)
 
+            cmd = build_cmd(key, max_current)
+
             try:
                 p = subprocess.Popen(
-                    spec['cmd'],
+                    cmd,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
                     start_new_session=True)
@@ -333,7 +358,15 @@ class ProcManager:
             return True, f'{spec["label"]} 시작'
 
     def _stop_locked(self, key: str):
-        """락을 이미 쥔 상태에서 호출. control 그룹은 먼저 정지시킨다."""
+        """락을 이미 쥔 상태에서 호출. control 그룹은 먼저 정지시킨다.
+
+        control 그룹은 이 0.3초 sleep 동안 self._lock 을 계속 쥔다 — 그래서
+        같은 시간 동안 다른 HTTP 스레드의 /state·/node 호출이 block 된다.
+        일부러다: 이 sleep 은 STOP 이 VESC 에 실제로 정착할 시간을 버는
+        것이고, 그 사이에 다른 start() 가 끼어들어 종료 중인 노드와
+        경합하면 안 되기 때문이다. UI 지연보다 정지 안전이 우선이라 락을
+        풀지 않는다.
+        """
         p = self._procs.pop(key, None)
         if p is None:
             return
@@ -478,7 +511,17 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == '/node':
             key = body.get('key', '')
             on = bool(body.get('on'))
-            ok, msg = (node.procs.start(key) if on
+            max_current = body.get('max_current')
+            if max_current is not None:
+                lo, hi = MAX_CURRENT_RANGE
+                if not (lo <= max_current <= hi):
+                    self._send(400, 'application/json', json.dumps({
+                        'ok': False,
+                        'msg': f'max_current 는 {lo}~{hi}A 범위여야 합니다',
+                        'nodes': node.procs.status(),
+                    }).encode())
+                    return
+            ok, msg = (node.procs.start(key, max_current) if on
                        else node.procs.stop(key))
             self._send(200, 'application/json', json.dumps({
                 'ok': ok, 'msg': msg, 'nodes': node.procs.status(),
@@ -575,6 +618,8 @@ class GuiServer(Node):
                                  on_before_stop=self._emit_stop)
         # 파라미터 서비스 클라이언트 캐시 (노드명 → {서비스명: client})
         self._param_clients = {}
+        # get_max_current() 결과 캐시 (노드명 → (조회 시각, 결과)), 2초 TTL
+        self._max_current_cache = {}
         os.makedirs(PRESET_DIR, exist_ok=True)
 
         # 레이저 카메라 확보 — 이미 돌면 그걸 쓰고, 없으면 띄우고 소유한다.
@@ -750,7 +795,14 @@ class GuiServer(Node):
         큰 값으로 바를 그려 포화를 숨긴다. 노드에서 직접 읽어 그 문제를
         없앤다. 연결할 노드가 없으면 None — JS 가 하드코딩 기본값으로
         폴백한다.
+
+        2초 캐시: /state 가 10Hz 로 폴링되므로 캐시가 없으면 파라미터
+        서비스를 10Hz 로 호출하게 된다.
         """
+        cache = self._max_current_cache.get(node_name)
+        if cache is not None and time.time() - cache[0] < 2.0:
+            return cache[1]
+
         names = ['max_current_surge', 'max_current_sway',
                  'max_current_heave']
         gc = self._client(node_name, GetParameters, 'get_parameters')
@@ -758,16 +810,28 @@ class GuiServer(Node):
         req.names = names
         res = self._call(gc, req, timeout=0.5)
         if res is None or len(res.values) != len(names):
-            return None
-        ms, mw, mh = (v.double_value for v in res.values)
-        return [ms, ms, mw, mw, mh, mh]
+            result = None
+        else:
+            ms, mw, mh = (v.double_value for v in res.values)
+            result = [ms, ms, mw, mw, mh, mh]
+
+        self._max_current_cache[node_name] = (time.time(), result)
+        return result
 
     # ─── 프리셋 ─────────────────────────────────────────────────────
     def preset_path(self, name: str) -> str:
-        """경로 탈출을 막는다 — 이름에서 디렉터리 성분을 제거."""
-        safe = os.path.basename(name).replace('/', '_').strip()
-        if not safe or safe.startswith('.'):
-            raise ValueError('프리셋 이름이 올바르지 않습니다')
+        """경로 성분이 섞인 이름은 거부한다.
+
+        예전엔 '/' 를 '_' 로 조용히 바꿔치기했는데, 그러면 사용자가
+        '../../etc/evil' 을 입력해도 실제로는 'evil.yaml' 에 저장되면서
+        메시지는 원래 입력 그대로를 보여줘 오해를 준다(경로 탈출 자체는
+        안 됐지만 사용자가 의도한 이름과 다른 곳에 조용히 저장됨). 그래서
+        디렉터리 구분자가 섞이면 아예 거부해 사용자가 알아채게 한다.
+        """
+        safe = name.strip()
+        if not safe or safe.startswith('.') or '/' in safe or '\\' in safe:
+            raise ValueError('프리셋 이름에 경로 구분자나 점(.)으로 '
+                             '시작하는 이름은 쓸 수 없습니다')
         if not safe.endswith('.yaml'):
             safe += '.yaml'
         return os.path.join(PRESET_DIR, safe)
@@ -792,11 +856,15 @@ class GuiServer(Node):
                     f, allow_unicode=True, sort_keys=True)
         except (OSError, ValueError) as e:
             return False, f'프리셋 저장 실패: {e}'
-        return True, f'{name} 저장 ({len(params)}개 파라미터)'
+        # 메시지엔 실제로 저장된 파일명(정제된 이름)을 쓴다 — 원본 입력을
+        # 그대로 보여주면 사용자가 의도한 이름과 실제 저장 위치가 달라 보여도
+        # 눈치채지 못한다.
+        return True, f'{os.path.basename(path)} 저장 ({len(params)}개 파라미터)'
 
     def preset_load(self, name: str, node_name: str):
         try:
-            with open(self.preset_path(name)) as f:
+            path = self.preset_path(name)
+            with open(path) as f:
                 data = yaml.safe_load(f) or {}
         except (OSError, ValueError, yaml.YAMLError) as e:
             return False, f'프리셋 읽기 실패: {e}'
@@ -816,7 +884,7 @@ class GuiServer(Node):
         if fail:
             return True, (f'{ok}개 적용, {len(fail)}개 실패: '
                           f'{", ".join(fail[:5])}')
-        return True, f'{name} 적용 ({ok}개 파라미터)'
+        return True, f'{os.path.basename(path)} 적용 ({ok}개 파라미터)'
 
     def _watchdog_tick(self):
         """브라우저 무응답 감시 — 끊기면 정지 키를 강제 발행."""
@@ -851,9 +919,20 @@ class GuiServer(Node):
         # 활성 조종 노드가 있으면 그 노드의 실제 전류 한계를 읽는다 —
         # max_current_* 는 런타임에 오버라이드될 수 있어 UI 의 하드코딩
         # 기본값만으로는 포화가 숨겨질 수 있다 (예: 1.0A 캡 운용 시).
+        #
+        # ProcManager 의 status() 만으로 게이트를 걸면 gui_server 가 직접
+        # 띄우지 않은 조종 노드(예: 터미널에서 ros2 run 으로 띄운 경우)를
+        # 놓친다 — 그래서 노드 이름이 실제로 존재하는지도 함께 본다.
+        # get_node_names() 는 로컬 캐시 조회라 서비스 왕복보다 훨씬 싸다.
+        live_names = None
         max_current = None
         for key, node_name in CONTROL_NODE_NAMES.items():
             if nodes.get(key):
+                max_current = self.get_max_current(node_name)
+                break
+            if live_names is None:
+                live_names = self.get_node_names()
+            if node_name in live_names:
                 max_current = self.get_max_current(node_name)
                 break
         return {
@@ -929,6 +1008,35 @@ def _selftest():
     pm._stop_locked('localization')
     assert 'localization' not in pm._procs, '형제 종료 실패'
     print('selftest: ProcManager OK')
+
+    # build_cmd: control 그룹만 전류 한계 오버라이드가 붙는지, NODE_SPECS
+    # 원본은 mutate 되지 않는지.
+    before = list(NODE_SPECS['teleop']['cmd'])
+    cmd = build_cmd('teleop', max_current=1.0)
+    assert 'max_current_surge:=1.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
+    assert 'max_current_sway:=1.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
+    assert 'max_current_heave:=1.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
+    assert NODE_SPECS['teleop']['cmd'] == before, 'NODE_SPECS 가 mutate 됨'
+    cmd_default = build_cmd('teleop')
+    assert f'max_current_surge:={DEFAULT_MAX_CURRENT}' in ' '.join(cmd_default), \
+        '기본 전류 한계 누락'
+    cmd_sensor = build_cmd('sonar', max_current=1.0)
+    assert 'max_current' not in ' '.join(cmd_sensor), \
+        '비-control 노드에 전류 오버라이드가 붙음'
+    print('selftest: build_cmd OK')
+
+    # preset_path: 경로 구분자가 섞인 이름은 거부, 정상 이름은 PRESET_DIR
+    # 아래로만 간다. preset_path 는 self 를 쓰지 않는 순수 로직이라
+    # unbound 로 바로 호출해도 안전하다.
+    p = GuiServer.preset_path(None, 'test1')
+    assert p == os.path.join(PRESET_DIR, 'test1.yaml'), 'preset_path 정상 케이스 오류'
+    for bad in ('../../etc/evil', 'a/b', 'a\\b', '.hidden', ''):
+        try:
+            GuiServer.preset_path(None, bad)
+            raise AssertionError(f'{bad!r} 가 거부되지 않음')
+        except ValueError:
+            pass
+    print('selftest: preset_path OK')
 
 
 def main(args=None):

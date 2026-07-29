@@ -320,7 +320,7 @@
     {title: '측위 — 하나만 (stellarHD 카메라 공유)',
      keys: ['localization', 'aruco']},
     {title: '조종 — 하나만 (CAN 버스 공유)',
-     keys: ['teleop', 'wall_align']},
+     keys: ['teleop', 'wall_align'], currentLimit: true},
   ];
   const NODE_LABELS = {
     pressure: '압력 (Bar10XT)', dvl: 'DVL-A50', imu: 'IMU (GV7-INS)',
@@ -342,6 +342,11 @@
       const fs = document.createElement('fieldset');
       fs.className = 'nodegrp';
       fs.innerHTML = `<legend>${g.title}</legend>`;
+      if (g.currentLimit) {
+        fs.innerHTML +=
+          `<label>전류 한계 <input type="number" id="max-current" ` +
+          `min="0.1" max="5.0" step="0.1" value="1.0"> A</label> `;
+      }
       for (const k of g.keys) {
         const b = document.createElement('button');
         b.className = 'nodebtn';
@@ -359,10 +364,17 @@
     const btn = document.getElementById('nb-' + key);
     btn.disabled = true;
     try {
+      const body = {key: key, on: !nodeState[key]};
+      // control 그룹을 켤 때만 전류 한계를 함께 보낸다.
+      const capInput = document.getElementById('max-current');
+      if (capInput && !nodeState[key] && NODE_LABELS[key] &&
+          (key === 'teleop' || key === 'wall_align')) {
+        body.max_current = parseFloat(capInput.value);
+      }
       const r = await (await fetch('/node', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({key: key, on: !nodeState[key]}),
+        body: JSON.stringify(body),
       })).json();
       if (!r.ok) alert(r.msg);
       nodeState = r.nodes || nodeState;
