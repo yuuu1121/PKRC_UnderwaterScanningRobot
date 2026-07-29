@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"source /opt/ros/humble/setup.bash; source install/setup.bash; python3 -c \\\"\\nfrom pkrc_control.wall_approach_control import WallApproachTeleop as W\\nprint('클래스 로드 OK')\\nprint('ACTIVE_MODES...",
+  "error": "Exit code 1\n클래스 로드 OK\nACTIVE_MODES: ('SCAN', 'BRAKE', 'TURN', 'APPROACH', 'HOLD')\n_hold_elapsed: True\n--- entry point ---",
+  "timestamp": "2026-07-27T09:14:02.356Z",
+  "retry_count": 2
+}

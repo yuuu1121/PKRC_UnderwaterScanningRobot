@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"grep -rn \\\"hero_ws\\\" ~/.bashrc ~/.bash_profile ~/.profile 2>/dev/null\",\"description\":\"Find hero_ws in shell startup files\"}",
+  "error": "Exit code 2\n/home/hero/.bashrc:64:hero_wsunset color_prompt force_color_prompt\n/home/hero/.bashrc:121:source ~/hero_ws/install/setup.bash",
+  "timestamp": "2026-07-28T08:56:55.077Z",
+  "retry_count": 1
+}

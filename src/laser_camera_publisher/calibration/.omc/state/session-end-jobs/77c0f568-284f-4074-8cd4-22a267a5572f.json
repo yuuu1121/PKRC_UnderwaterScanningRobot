@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "jobId": "b92a4b73-9d88-4d97-a988-de91b9db4328",
+  "sessionId": "77c0f568-284f-4074-8cd4-22a267a5572f",
+  "scopeKey": "b60ba2f21c2c27de545dcaadcd0e5bcbd303f876554c445e002ca76eb370a6a0",
+  "revision": 41,
+  "createdAt": "2026-07-29T08:20:08.524Z",
+  "updatedAt": "2026-07-29T08:20:10.178Z",
+  "producerGraceExpiresAt": "2026-07-29T08:20:38.525Z",
+  "bestEffortDeadlineAt": "2026-07-29T08:21:29.525Z",
+  "producers": {
+    "core": {
+      "state": "sealed",
+      "intentKey": "d3a0dcf5014c2038f217f3ee5380efcb557f0af8a3a0fc301ebe46fa91cb656d",
+      "payloadDigest": "d3a0dcf5014c2038f217f3ee5380efcb557f0af8a3a0fc301ebe46fa91cb656d",
+      "sealedAt": "2026-07-29T08:20:08.613Z",
+      "sealedBy": "foreground"
+    },
+    "wiki": {
+      "state": "no-op",
+      "sealedAt": "2026-07-29T08:20:08.524Z",
+      "sealedBy": "wiki-producer"
+    }
+  },
+  "actions": {
+    "foreground-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 0,
+      "idempotencyKey": "febf6dba2f2536433960a07f7cedce72e946b43ced0896570df80f017b8914d2",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {},
+        "foregroundResult": {
+          "removedTransientFiles": 3,
+          "completedAt": "2026-07-29T08:20:08.612Z"
+        }
+      },
+      "budgetMs": 9000,
+      "completedAt": "2026-07-29T08:20:08.613Z",
+      "lastOutcomeCode": "completed"
+    },
+    "wiki-capture": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 0,
+      "idempotencyKey": "1719cd1ef5b51e0269b78c4cb8c9308c9c1f7b82fd1c067fc034c060f23863f5",
+      "payload": {},
+      "budgetMs": 9000,
+      "completedAt": "2026-07-29T08:20:08.524Z"
+    },
+    "team-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "cee6ac31df545408e1e822247ac249b3f8182a98a5fe8e448ae3b251e55bdee1",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-07-29T08:20:08.664Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "1db3b225-a14b-4501-a993-ed168a54f979",
+        "phase": "terminal",
+        "deadlineAt": "2026-07-29T08:20:18.634Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-07-29T08:20:08.894Z"
+    },
+    "python-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "1f1370c4ac056606059d517e2f106b602d8cbcb04587b3fcc5f3b9f89e649cd0",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-07-29T08:20:08.915Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "eb2a28d1-f0a4-4dc1-b206-a9841425218e",
+        "phase": "terminal",
+        "deadlineAt": "2026-07-29T08:20:18.634Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-07-29T08:20:09.181Z"
+    },
+    "reply-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "0b3a8b47c28b26d56aca004d4f572b96c118f16819c0d35162418816f9a5420a",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-07-29T08:20:09.200Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "90f766b0-5777-4262-b3eb-98d7b18099fc",
+        "phase": "terminal",
+        "deadlineAt": "2026-07-29T08:20:18.634Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-07-29T08:20:09.439Z"
+    },
+    "callback": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "d068ede2655bf89e0c0950e087d0603d7dcf45538e94f20a654d08c6f4841895",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-07-29T08:20:09.457Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "37c25237-2546-4035-9a29-e22bc0b2ef81",
+        "phase": "terminal",
+        "deadlineAt": "2026-07-29T08:20:18.634Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-07-29T08:20:09.675Z"
+    },
+    "notification": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "89c0438ff63097ce04beb60efb87292ff68a7af350a0ee331f3de9dbf42d62fc",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-07-29T08:20:09.693Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "4592d204-e27d-4175-b3b4-7971304aedb3",
+        "phase": "terminal",
+        "deadlineAt": "2026-07-29T08:20:18.634Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-07-29T08:20:09.909Z"
+    },
+    "openclaw": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "31fe8f6e1cf204e27006de511df257326fdd98655122ca437013e8779ffc735b",
+      "payload": {
+        "transcriptPath": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+        "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "transcript_path": "/home/hero/.claude/projects/-home-hero-hero-ws-src-laser-camera-publisher-calibration/77c0f568-284f-4074-8cd4-22a267a5572f.jsonl",
+          "cwd": "/home/hero/hero_ws/src/laser_camera_publisher/calibration",
+          "prompt_id": "43eb051f-a17a-4434-887f-718d74d67b39",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "metrics": {
+          "session_id": "77c0f568-284f-4074-8cd4-22a267a5572f",
+          "ended_at": "2026-07-29T08:20:08.519Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        },
+        "initialTeamNames": [],
+        "openClawEnabled": false,
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-07-29T08:20:09.926Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "7876d563-51c7-4925-a407-229268505e14",
+        "phase": "terminal",
+        "deadlineAt": "2026-07-29T08:20:18.634Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-07-29T08:20:10.143Z"
+    }
+  },
+  "owner": null,
+  "phase": "complete",
+  "completion": {
+    "completedAt": "2026-07-29T08:20:10.161Z",
+    "terminalDigest": "badf6b4ee578e7dd82e5b7000dbba353378d17b2fd5fc6ecf58f83ca8e650be7",
+    "terminalRevision": 40
+  }
+}

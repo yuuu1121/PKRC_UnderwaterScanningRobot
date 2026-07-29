@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:reach-robotics.com)",
+      "WebFetch(domain:www.nauticexpo.com)"
+    ]
+  }
+}

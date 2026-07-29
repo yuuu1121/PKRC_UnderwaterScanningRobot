@@ -1,0 +1,222 @@
+#-----------------------------------------------------------------------------------
+# MIT License
+
+# Copyright (c) 2024 Takumi Asada
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#-----------------------------------------------------------------------------------
+
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from sensor_msgs.msg import Range
+from std_msgs.msg import Float32
+
+from rcl_interfaces.msg import SetParametersResult
+
+import os, sys
+_vendored = os.path.join(os.path.dirname(__file__), "ping-python")
+if _vendored not in sys.path:
+    sys.path.insert(0, _vendored)
+for _m in [m for m in list(sys.modules) if m == "brping" or m.startswith("brping.")]:
+    del sys.modules[_m]
+from brping import Ping1D
+
+class Ping1dComponent(Node):
+  def __init__(self):
+    super().__init__("ping1d_node")
+
+    # Default: RELIABLE QoS with depth 10 for consistent sensor data delivery
+    reliable_qos = QoSProfile(
+        reliability=ReliabilityPolicy.RELIABLE,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=10
+    )
+
+    # Publishers with RELIABLE QoS
+    self.publisher_ = self.create_publisher(Range, "/sensor/sonar/ping1d/range", reliable_qos)
+    self.dist_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/data", reliable_qos)
+    # confidence [%] — 벽면 추종 제어가 거리값 신뢰 여부를 판단하는 데 사용.
+    # get_distance_simple() 이 이미 반환하던 값을 그대로 노출만 한 것.
+    self.conf_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/confidence", reliable_qos)
+    self.speed_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/param/speed", reliable_qos)
+    self.interval_num_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/param/interval_num", reliable_qos)
+    self.gain_num_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/param/gain_num", reliable_qos)
+    self.mode_auto_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/param/mode_auto", reliable_qos)
+    self.scan_start_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/param/scan_start", reliable_qos)
+    self.scan_lenght_pub_ = self.create_publisher(Float32, "/sensor/sonar/ping1d/param/scan_lenght", reliable_qos)
+    self.timer_ = self.create_timer(0.1, self.range_callback)
+
+    ### Declare ROS 2 Parameter
+    self.declare_parameter('speed', 1450000)  # 1550000 mm/s 1550 m/s
+    self.speed_:float = self.get_parameter('speed').value
+    self.declare_parameter('interval_num', 100)
+    self.interval_num_:float = self.get_parameter('interval_num').value
+    self.declare_parameter('gain_num', 1) # int 0 - 6
+    self.gain_num_:int = self.get_parameter('gain_num').value
+    self.declare_parameter('scan_start', 100) # default 100 [mm] range(30 to 200)
+    self.scan_start_:float = self.get_parameter('scan_start').value
+    self.declare_parameter('scan_lenght', 3000) # default 2000 [mm] range(2000 to 10000)
+    self.scan_lenght_:float = self.get_parameter('scan_lenght').value
+    self.declare_parameter('mode_auto', 0) # default 0: manual mode, 1: auto mode
+    self.mode_auto_:int = self.get_parameter('mode_auto').value
+    self.declare_parameter('port', '/dev/ping')  # Original default value
+    self.port:str = self.get_parameter('port').value
+    self.declare_parameter('frame_id', 'ping1d_link')  # Parameterized frame_id
+    self.frame_id:str = self.get_parameter('frame_id').value
+
+    self.param_handler_ptr_ = self.add_on_set_parameters_callback(self.set_param_callback)
+
+    ### Make a new Ping
+    self.baudrate = 115200
+    self.ping = Ping1D()
+    self.ping.connect_serial(self.port, self.baudrate)
+
+    if self.ping.initialize() is False:
+      print("Failed to initialize Ping!")
+      exit(1)
+
+    ### Set Initial parameter
+    # self.id = self.ping.get_device_id()
+    self.ping.set_speed_of_sound(self.speed_)
+    self.ping.set_ping_interval(self.interval_num_)
+    self.ping.set_gain_setting(self.gain_num_)
+    self.ping.set_range(self.scan_start_, self.scan_lenght_)
+    self.ping.set_mode_auto(self.mode_auto_)
+
+  def range_callback(self):
+    # distance: Units: mm; The current return distance determined for the most recent acoustic measurement.\n
+    # confidence: Units: %; Confidence in the most recent range measurement.\n
+    # transmit_duration: Units: us; The acoustic pulse length during acoustic transmission/activation.\n
+    # ping_number: The pulse/measurement count since boot.\n
+    # scan_start: Units: mm; The beginning of the scan region in mm from the transducer.\n
+    # scan_length: Units: mm; The length of the scan region.\n
+    # gain_setting: The current gain setting. 0: 0.6, 1: 1.8, 2: 5.5, 3: 12.9, 4: 30.2, 5: 66.1, 6: 144\n
+    ### Comment or Uncomment below
+    # data = self.ping.get_distance()
+    # print("data:%d\n", data)
+
+    # distance: Units: mm; Distance to the target.\n
+    # confidence: Units: %; Confidence in the distance measurement.\n
+    simple_data = self.ping.get_distance_simple()
+    # print("simple data:%d\n", simple_data)
+
+    # scan_start: Units: mm; The beginning of the scan range in mm from the transducer.\n
+    # scan_length: Units: mm; The length of the scan range.\n
+    range_data = self.ping.get_range()
+    # print("scan_start: %s\tscan_length: %s " % (range_data["scan_start"], range_data["scan_length"]))
+
+    # gain_setting: The current gain setting. 0: 0.6, 1: 1.8, 2: 5.5, 3: 12.9, 4: 30.2, 5: 66.1, 6: 144\n
+    gain = self.ping.get_gain_setting()
+    # print("gain:%d\n", gain)
+
+    # speed_of_sound: Units: mm/s; The speed of sound in the measurement medium. ~1,500,000 mm/s for water.\n
+    speed_sound = self.ping.get_speed_of_sound()
+    
+    # Publish parameters to topics for recording
+    speed_msg = Float32()
+    speed_msg.data = float(self.speed_)
+    self.speed_pub_.publish(speed_msg)
+    
+    gain_num_msg = Float32()
+    gain_num_msg.data = float(self.gain_num_)
+    self.gain_num_pub_.publish(gain_num_msg)
+    
+    interval_num_msg = Float32()
+    interval_num_msg.data = float(self.interval_num_)
+    self.interval_num_pub_.publish(interval_num_msg)
+    
+    mode_auto_msg = Float32()
+    mode_auto_msg.data = float(self.mode_auto_)
+    self.mode_auto_pub_.publish(mode_auto_msg)
+    
+    scan_start_msg = Float32()
+    scan_start_msg.data = float(self.scan_start_)
+    self.scan_start_pub_.publish(scan_start_msg)
+    
+    scan_lenght_msg = Float32()
+    scan_lenght_msg.data = float(self.scan_lenght_)
+    self.scan_lenght_pub_.publish(scan_lenght_msg)
+    # print("speed_of_sound: %s\n" % (speed_sound["speed_of_sound"])) 
+
+    # firmware_version_major: Firmware major version.\n
+    # firmware_version_minor: Firmware minor version.\n
+    # voltage_5: Units: mV; Device supply voltage.\n
+    # ping_interval: Units: ms; The interval between acoustic measurements.\n
+    # gain_setting: The current gain setting. 0: 0.6, 1: 1.8, 2: 5.5, 3: 12.9, 4: 30.2, 5: 66.1, 6: 144\n
+    # mode_auto: The current operating mode of the device. 0: manual mode, 1: auto mode\n
+    ### Comment or Uncomment below
+    # general = self.ping.get_general_info()
+    # print("general:%d\n", general)
+
+    # ping_interval: Units: ms; The minimum interval between acoustic measurements. The actual interval may be longer.\n
+    interval = self.ping.get_ping_interval()
+    # print("interval:%d\n", interval)
+
+    mode_auto = self.ping.get_mode_auto()
+    # print("mode_auto:%d\n", mode_auto)
+ 
+
+    ### ROS 2 data publisher
+    range_msg = Range()
+    range_msg.header.stamp = self.get_clock().now().to_msg()
+    range_msg.header.frame_id = self.frame_id
+    range_msg.radiation_type = Range.ULTRASOUND
+    range_msg.field_of_view = 0.1 # [rad]
+    range_msg.min_range = float(range_data["scan_start"]/1000) # [m]
+    range_msg.max_range = float(range_data["scan_length"]/1000) # [m]
+    range_msg.range = float(simple_data["distance"]/1000) # [m]
+    self.publisher_.publish(range_msg)
+    # self.get_logger().info("Publishing range: {}".format(range_msg.range))
+
+    dist_msg = Float32()
+    dist_msg.data = float(simple_data["distance"]/1000)
+    self.dist_pub_.publish(dist_msg)
+
+    conf_msg = Float32()
+    conf_msg.data = float(simple_data["confidence"])
+    self.conf_pub_.publish(conf_msg)
+
+  def set_param_callback(self, params):
+        result = SetParametersResult(successful=True)
+        for param in params:
+            if param.name == 'speed':
+                self.speed_ = param.value
+                self.get_logger().info('Updated speed value: %f' % self.speed_)
+                self.ping.set_speed_of_sound(self.speed_)
+            if param.name == 'interval_num':
+                self.interval_num_ = param.value
+                self.get_logger().info('Updated interval_num value: %f' % self.interval_num_)
+                self.ping.set_ping_interval(self.interval_num_)
+            if param.name == 'gain_num':
+                self.gain_num_ = param.value
+                self.get_logger().info('Updated gain_num value: %f' % self.gain_num_)
+                self.ping.set_gain_setting(self.gain_num_)
+            if param.name == 'scan_start':
+                self.scan_start_ = param.value
+                self.get_logger().info('Updated scan_start value: %f' % self.scan_start_)
+                self.ping.set_range(self.scan_start_, self.scan_lenght_)
+            if param.name == 'scan_lenght':
+                self.scan_lenght_ = param.value
+                self.get_logger().info('Updated scan_lenght value: %f' % self.scan_lenght_)
+                self.ping.set_range(self.scan_start_, self.scan_lenght_)
+            if param.name == 'mode_auto':
+                self.mode_auto_ = param.value
+                self.get_logger().info('Updated mode_auto value: %f' % self.mode_auto_)
+                self.ping.set_mode_auto(self.mode_auto_)
+        return result

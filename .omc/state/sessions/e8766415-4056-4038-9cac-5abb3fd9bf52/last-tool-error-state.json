@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"pgrep -fa \\\"lib/rqt_reconfigure\\\"; echo \\\"---\\\"; for p in $(pgrep -f \\\"lib/rqt_reconfigure\\\"); do kill -9 \\\"$p\\\" 2>/dev/null; done; sleep 2; echo \\\"정리 후: $(pgrep -f 'lib/rqt_reconfigure' |...",
+  "error": "Exit code 1\n74752 /bin/bash -c source /home/hero/.claude/shell-snapshots/snapshot-bash-1785115026828-yvkz67.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'pgrep -fa \"lib/rqt_reconfigure\"; echo \"---\"; for p in $(pgrep -f \"lib/rqt_reconfigure\"); do kill -9 \"$p\" 2>/dev/null; done; sleep 2; echo \"정리 후: $(pgrep -f '\"'\"'lib/rqt_reconfigure'\"'\"' | wc -l)\"; exit 0' < /dev/null && pwd ...",
+  "timestamp": "2026-07-27T02:27:25.821Z",
+  "retry_count": 3
+}

@@ -1,0 +1,37 @@
+[INFO] [1785125706.115355528] [wall_follow_teleop]: rqt_reconfigure 실행 — 파라미터를 실시간 조절하세요.
+[INFO] [1785125706.121984521] [wall_follow_teleop]: CAN bus initialized (can0)
+[INFO] [1785125706.196365715] [wall_follow_teleop]: DVL drift compensation enabled on /dvl/data (BEST_EFFORT)
+[WARN] [1785125706.222625903] [wall_follow_teleop]: Sonar lost (conf 0%, raw 0.00m) — surge 정지, sway/heave 는 유지
+[WARN] [1785125706.223610983] [wall_follow_teleop]: Pressure sensor stale — depth hold OFF, W/S now directly commands heave
+[INFO] [1785125706.383141855] [wall_follow_teleop]: Sonar recovered — 거리제어 재개
+
+╔═══════════════════════════════════════════════════════╗
+║  PKRC Wall-Follow Teleop - 소나 기반 벽면 검사        ║
+╠═══════════════════════════════════════════════════════╣
+║   C    : 벽면 정렬 시작 (스캔→회전→접근) / 취소       ║
+║   ←/→  : Sway (좌/우) -- 벽 따라 검사 이동            ║
+║   A/D  : Yaw Rate 수동 회전 (정렬 해제됨)             ║
+║   W/S  : Depth ∓10cm (depth hold)                     ║
+║   R    : Heading 리셋   T : Depth 리셋                ║
+║   X    : 정지 (모든 축 + 제어기 + 모드 리셋)          ║
+║   Q    : 종료                                         ║
+╠═══════════════════════════════════════════════════════╣
+║   ↑/↓ 없음 — surge 는 소나 거리유지 전용 축입니다     ║
+╚═══════════════════════════════════════════════════════╝
+
+Traceback (most recent call last):
+  File "/home/hero/hero_ws/install/pkrc_control/lib/pkrc_control/wall_follow_control", line 33, in <module>
+    sys.exit(load_entry_point('pkrc-control', 'console_scripts', 'wall_follow_control')())
+  File "/home/hero/hero_ws/build/pkrc_control/pkrc_control/wall_follow_control.py", line 1479, in main
+    rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 681, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException

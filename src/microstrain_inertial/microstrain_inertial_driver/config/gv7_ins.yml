@@ -1,0 +1,36 @@
+/**:
+  ros__parameters:
+    # GV7-INS 설정 파일
+    port: "/dev/ttyACM0"
+    baudrate: 115200
+
+    # GV7-INS는 GNSS가 없으므로 PPS 비활성화
+    filter_pps_source: 0
+
+    # GNSS 관련 기능 비활성화
+    filter_enable_gnss_pos_vel_aiding: false
+    filter_enable_gnss_heading_aiding: false
+
+    # Declination 설정 (GNSS 없으므로 none)
+    filter_declination_source: 1
+
+    # Filter 초기화 설정 - GV7-INS용
+    # 이 값은 정수가 아니라 비트필드다 (MIP SDK AlignmentSelector):
+    #   0 = None(자동 정렬 안함)  1 = Dual-antenna GNSS
+    #   2 = Kinematic(GNSS 속도)  4 = Magnetometer  8 = External
+    # GV7-INS 는 GNSS 가 없으므로 1·2 는 장비가 Invalid Parameter 로 거부한다
+    # (이전에 1 로 설정돼 노드가 기동 실패했음 — 주석의 값 매핑이 틀렸었다).
+    # 0 을 쓰는 이유: 초기 절대방위가 필요없는 상대각 제어(벽면추종 등)가 주용도이고,
+    # 수중 금속·스러스터 전류가 자기계를 교란해 4(mag) 도 초기 정렬 오차 위험이 있다.
+    # 절대방위(지도 매핑 등)가 필요해지면 4 + filter_enable_magnetometer_aiding 재검토.
+    filter_auto_heading_alignment_selector: 0
+    filter_enable_magnetometer_aiding: false
+
+    # IMU 데이터 레이트
+    imu_data_rate: 100
+
+    # Magnetometer 데이터 레이트 (mag calibration용, 0이면 비활성)
+    # mag 미사용이 기본 — 재캘리브레이션 시 10으로 올리고 위 두 항목을 4/true 로 되돌린다
+    imu_mag_data_rate: 0
+    mag_hard_iron_offset: [18.413534, -22.821398, 22.841741]
+    mag_soft_iron_matrix: [2.223789, 0.718262, -0.658707, 0.718262, 2.185449, 1.419584, -0.658707, 1.419584, 2.576116]

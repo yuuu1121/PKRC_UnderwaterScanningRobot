@@ -1,0 +1,8 @@
+/**:
+  ros__parameters:
+    video_device: "/dev/video4"
+    image_width: 1600
+    image_height: 1200
+    pixel_format: "mjpeg2rgb"
+    framerate: 60.0
+    camera_name: "default_cam"
