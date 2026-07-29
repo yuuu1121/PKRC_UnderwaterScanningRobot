@@ -23,9 +23,20 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import String
 
 # MJPEG multipart 경계 문자열. 브라우저가 프레임 구분에 쓴다.
 BOUNDARY = 'pkrcframe'
+
+# 누르고 있는 동안만 유효한 이동 키. 이 키를 보낸 뒤 브라우저가 조용해지면
+# 통신이 끊긴 것으로 보고 강제 정지시킨다. r/t/x/c/q 는 1회성이라 제외.
+MOTION_KEYS = frozenset({'UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd', 'w', 's'})
+
+# 이 시간 동안 이동 키가 갱신되지 않으면 정지시킨다 [초].
+KEY_TIMEOUT = 0.5
+
+# 전 축 정지 + 컨트롤러 리셋 키 (두 조종 노드 공통).
+STOP_KEY = 'x'
 
 
 def mjpeg_frame(jpeg_bytes: bytes) -> bytes:
@@ -71,6 +82,43 @@ class FrameStore:
             if self._data is None:
                 return float('inf')
             return (time.time() if now is None else now) - self._stamp
+
+
+class KeyWatchdog:
+    """브라우저와의 통신이 끊기면 로봇을 정지시킨다.
+
+    탭을 닫거나 와이파이가 끊기면 마지막 이동 명령이 노드에 남아 계속
+    추력을 낸다. 물속 로봇이 명령 없이 밀고 나가는 것은 회수 불가
+    상황이므로, 무응답을 감지해 정지 키를 강제 발행한다.
+
+    노드 자체에도 key_timeout 0.4초 decay 가 있지만(keyboard_control_teleop.py:537)
+    그것은 추력을 0 으로 줄일 뿐 적분기와 heading target 을 정리하지
+    않는다. x 는 컨트롤러까지 리셋한다.
+    """
+
+    def __init__(self, timeout: float = KEY_TIMEOUT):
+        self.timeout = timeout
+        self._last_motion = 0.0
+        self._armed = False       # 감시 중인가 (이동 키를 받은 상태)
+
+    def touch(self, key: str, now: float):
+        """키 수신을 기록한다. 이동 키면 감시를 (재)시작한다."""
+        if key in MOTION_KEYS:
+            self._last_motion = now
+            self._armed = True
+
+    def check(self, now: float):
+        """정지가 필요하면 STOP_KEY, 아니면 None.
+
+        한 번 발동하면 disarm 되어 새 이동 키가 올 때까지 재발동하지
+        않는다 — x 를 10Hz 로 계속 쏘면 로그가 폭주하고 조종 복귀를 방해한다.
+        """
+        if not self._armed:
+            return None
+        if now - self._last_motion > self.timeout:
+            self._armed = False
+            return STOP_KEY
+        return None
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -133,6 +181,40 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, 'text/plain; charset=utf-8', b'not found')
 
+    def _read_json(self):
+        """요청 본문을 JSON 으로 파싱. 실패하면 None."""
+        try:
+            n = int(self.headers.get('Content-Length', 0))
+            if n <= 0:
+                return None
+            return json.loads(self.rfile.read(n))
+        except (ValueError, TypeError):
+            return None
+
+    def do_POST(self):
+        node = self.server.node
+        body = self._read_json()
+        if body is None:
+            self._send(400, 'application/json',
+                       json.dumps({'ok': False,
+                                   'error': 'JSON 본문이 필요합니다'}).encode())
+            return
+
+        if self.path == '/key':
+            key = body.get('key', '')
+            if not key:
+                self._send(400, 'application/json',
+                           json.dumps({'ok': False,
+                                       'error': 'key 가 비었습니다'}).encode())
+                return
+            node.publish_key(key)
+            self._send(200, 'application/json',
+                       json.dumps({'ok': True}).encode())
+        else:
+            self._send(404, 'application/json',
+                       json.dumps({'ok': False,
+                                   'error': 'not found'}).encode())
+
 
 class GuiServer(Node):
     def __init__(self):
@@ -159,6 +241,14 @@ class GuiServer(Node):
             CompressedImage, '/image_raw/compressed',
             self._image_cb, img_qos)
 
+        # ── 조종 키 ────────────────────────────────────────────────────
+        # 두 조종 노드가 /gui/key 를 구독한다. stdin(터미널) 경로와
+        # 병행 동작하므로 둘 중 아무거나 써도 된다.
+        self.key_pub = self.create_publisher(String, '/gui/key', 10)
+        self.watchdog = KeyWatchdog()
+        # 10Hz 로 통신 생존 확인 — 끊기면 강제 정지
+        self.create_timer(0.1, self._watchdog_tick)
+
         self._httpd = ThreadingHTTPServer((host, port), _Handler)
         self._httpd.node = self
         self._http_thread = threading.Thread(
@@ -178,6 +268,24 @@ class GuiServer(Node):
 
     def frame_age(self) -> float:
         return self.frames.age()
+
+    def publish_key(self, key: str):
+        """키를 /gui/key 로 발행하고 watchdog 을 갱신한다."""
+        msg = String()
+        msg.data = key
+        self.key_pub.publish(msg)
+        self.watchdog.touch(key, time.time())
+
+    def _watchdog_tick(self):
+        """브라우저 무응답 감시 — 끊기면 정지 키를 강제 발행."""
+        stop = self.watchdog.check(time.time())
+        if stop is not None:
+            msg = String()
+            msg.data = stop
+            self.key_pub.publish(msg)
+            self.get_logger().warn(
+                f'브라우저 무응답 {self.watchdog.timeout}초 — '
+                f'강제 정지({stop}) 발행')
 
     def _find_html(self) -> str:
         """gui.html 경로를 찾는다. 설치본 우선, 없으면 소스 트리."""
@@ -207,6 +315,15 @@ def _selftest():
     assert b'Content-Type: image/jpeg' in out, 'MJPEG 헤더 오류'
     assert out.split(b'\r\n\r\n', 1)[1] == payload + b'\r\n', 'JPEG 본문 변조'
     print('selftest: MJPEG 프레이밍 OK')
+
+    wd = KeyWatchdog(timeout=0.5)
+    wd.touch('UP', now=100.0)
+    assert wd.check(now=100.3) is None, 'watchdog 조기 발동'
+    assert wd.check(now=100.6) == STOP_KEY, 'watchdog 미발동'
+    assert wd.check(now=101.0) is None, 'watchdog 중복 발동'
+    wd.touch('r', now=200.0)
+    assert wd.check(now=201.0) is None, '비이동 키에 발동'
+    print('selftest: watchdog OK')
 
 
 def main(args=None):

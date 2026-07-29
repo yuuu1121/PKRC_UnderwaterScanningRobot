@@ -13,7 +13,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pkrc_control.gui_server import mjpeg_frame, BOUNDARY, FrameStore
+from pkrc_control.gui_server import (
+    mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS)
 
 
 def test_mjpeg_frame_structure():
@@ -60,9 +61,60 @@ def test_frame_store_age():
     assert fs.age(now=100.5) == 0.5
 
 
+def test_watchdog_fires_after_timeout():
+    """이동 키 후 0.5초 무응답이면 정지 키를 내야 한다."""
+    wd = KeyWatchdog(timeout=0.5)
+    wd.touch('UP', now=100.0)
+
+    assert wd.check(now=100.3) is None       # 아직 유효
+    assert wd.check(now=100.49) is None      # 경계 직전
+    assert wd.check(now=100.51) == 'x'       # 발동
+
+
+def test_watchdog_fires_only_once():
+    """한 번 정지시킨 뒤 재발동하지 않는다 (x 폭주 방지)."""
+    wd = KeyWatchdog(timeout=0.5)
+    wd.touch('UP', now=100.0)
+    assert wd.check(now=101.0) == 'x'
+    assert wd.check(now=102.0) is None
+    assert wd.check(now=200.0) is None
+
+
+def test_watchdog_rearms_on_new_motion_key():
+    """새 이동 키가 오면 다시 감시를 시작한다."""
+    wd = KeyWatchdog(timeout=0.5)
+    wd.touch('UP', now=100.0)
+    assert wd.check(now=101.0) == 'x'
+
+    wd.touch('LEFT', now=102.0)
+    assert wd.check(now=102.2) is None
+    assert wd.check(now=103.0) == 'x'
+
+
+def test_watchdog_ignores_nonmotion_keys():
+    """r·t·x 같은 1회성 키는 감시 대상이 아니다 — 놓아도 위험하지 않다."""
+    wd = KeyWatchdog(timeout=0.5)
+    wd.touch('r', now=100.0)
+    assert wd.check(now=101.0) is None
+
+    wd.touch('x', now=100.0)
+    assert wd.check(now=101.0) is None
+
+
+def test_motion_keys_content():
+    """이동 키 집합이 노드의 위험 키와 일치하는지."""
+    assert MOTION_KEYS == frozenset(
+        {'UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd', 'w', 's'})
+
+
 if __name__ == '__main__':
     test_mjpeg_frame_structure()
     test_mjpeg_frame_does_not_alter_payload()
     test_frame_store_returns_latest()
     test_frame_store_age()
-    print('test_gui_server(frame): 4 passed')
+    test_watchdog_fires_after_timeout()
+    test_watchdog_fires_only_once()
+    test_watchdog_rearms_on_new_motion_key()
+    test_watchdog_ignores_nonmotion_keys()
+    test_motion_keys_content()
+    print('test_gui_server: 9 passed')

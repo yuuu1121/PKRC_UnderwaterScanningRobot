@@ -11,11 +11,41 @@
   <img id="cam" src="/stream" alt="레이저 카메라">
   <p id="cam-status">영상 수신 대기…</p>
 </div>
+<h2>조종</h2>
+<div id="pad">
+  <div class="row">
+    <button data-key="LEFT" data-hold="1">← 좌</button>
+    <button data-key="UP" data-hold="1">↑ 전진</button>
+    <button data-key="RIGHT" data-hold="1">우 →</button>
+  </div>
+  <div class="row">
+    <button data-key="a" data-hold="1">A 우회전</button>
+    <button data-key="DOWN" data-hold="1">↓ 후진</button>
+    <button data-key="d" data-hold="1">D 좌회전</button>
+  </div>
+  <div class="row">
+    <button data-key="w">W 상승 10cm</button>
+    <button data-key="s">S 하강 10cm</button>
+  </div>
+  <div class="row">
+    <button data-key="r">R 방위 리셋</button>
+    <button data-key="t">T 수심 리셋</button>
+    <button data-key="c">C 벽 정렬</button>
+    <button data-key="x" class="stop">X 정지</button>
+  </div>
+</div>
 <style>
   body { font-family: system-ui, sans-serif; margin: 1rem;
          background: #111; color: #eee; }
   #cam { max-width: 100%; border: 1px solid #444; background: #000; }
   #cam-status { color: #f80; }
+  #pad .row { display: flex; gap: .5rem; margin-bottom: .5rem;
+              flex-wrap: wrap; }
+  #pad button { padding: .8rem 1rem; font-size: 1rem; cursor: pointer;
+                background: #333; color: #eee; border: 1px solid #555;
+                border-radius: 4px; min-width: 6rem; }
+  #pad button:active { background: #06c; }
+  #pad button.stop { background: #833; }
 </style>
 <script>
   // 영상이 실제로 오는지 img 이벤트로 판단한다. 검은 화면만 보이면
@@ -27,6 +57,50 @@
     status.textContent =
       '영상 없음 — laser_camera_publisher 가 떠 있는지 확인하세요.';
   });
+
+  // 누르고 있는 동안 20Hz 로 키를 반복 전송한다. 노드가 0.4초 auto-repeat
+  // 타임아웃을 전제로 만들어져 있어(key_timeout) 이 방식이 그대로 맞는다.
+  // 떼면 전송이 멈추고 노드가 자연 decay 한다.
+  const HOLD_HZ = 20;
+  let holdTimer = null;
+
+  function sendKey(key) {
+    fetch('/key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: key}),
+    }).catch(() => {});   // 통신 실패는 서버 watchdog 이 처리한다
+  }
+
+  function startHold(key) {
+    stopHold();
+    sendKey(key);
+    holdTimer = setInterval(() => sendKey(key), 1000 / HOLD_HZ);
+  }
+
+  function stopHold() {
+    if (holdTimer !== null) { clearInterval(holdTimer); holdTimer = null; }
+  }
+
+  document.querySelectorAll('#pad button').forEach(btn => {
+    const key = btn.dataset.key;
+    if (btn.dataset.hold) {
+      // 누르는 동안 반복. pointer 이벤트로 마우스·터치를 함께 처리.
+      btn.addEventListener('pointerdown', e => {
+        e.preventDefault(); startHold(key);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev =>
+        btn.addEventListener(ev, stopHold));
+    } else {
+      btn.addEventListener('click', () => sendKey(key));
+    }
+  });
+
+  // 탭이 숨겨지면 즉시 전송을 멈춘다 — 서버 watchdog 이 0.5초 후 정지시킨다.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopHold();
+  });
+  window.addEventListener('blur', stopHold);
 </script>
 </body>
 </html>
