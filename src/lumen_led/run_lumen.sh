@@ -7,7 +7,7 @@ source /opt/ros/humble/setup.bash
 source /home/hero/hero_ws/install/setup.bash
 
 # Setup pinmux for PWM7 on SOC_GPIO19_PG6 (needs sudo)
-sudo python3 /home/hero/hero_ws/setup_pwm7_pinmux.py
+sudo python3 /home/hero/hero_ws/tools/setup_pwm7_pinmux.py
 
 # Export PWM and fix permissions so non-root can use it
 sudo bash -c '

@@ -4,7 +4,7 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /home/hero/hero_ws/setup_pwm7_pinmux.py
+ExecStart=/usr/bin/python3 /home/hero/hero_ws/tools/setup_pwm7_pinmux.py
 ExecStartPost=/bin/bash -c 'echo 0 > /sys/class/pwm/pwmchip3/export 2>/dev/null || true; sleep 0.3; chmod 666 /sys/class/pwm/pwmchip3/pwm0/period /sys/class/pwm/pwmchip3/pwm0/duty_cycle /sys/class/pwm/pwmchip3/pwm0/enable'
 RemainAfterExit=yes
 
