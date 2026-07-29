@@ -11,6 +11,22 @@
   <img id="cam" src="/stream" alt="레이저 카메라">
   <p id="cam-status">영상 수신 대기…</p>
 </div>
+<h2>노드</h2>
+<div id="nodes"></div>
+
+<h2>게인 튜닝</h2>
+<div id="tune">
+  <p id="tune-status">조종 노드를 켜면 게인 슬라이더가 나타납니다.</p>
+  <div id="sliders"></div>
+  <div id="preset-box">
+    <input id="preset-name" placeholder="프리셋 이름" size="16">
+    <button id="preset-save">저장</button>
+    <select id="preset-sel"></select>
+    <button id="preset-load">불러오기</button>
+    <span id="preset-msg"></span>
+  </div>
+</div>
+
 <h2>조종</h2>
 <div id="pad">
   <div class="row">
@@ -88,6 +104,25 @@
   #chart { background: #1a1a1a; border: 1px solid #444; max-width: 100%; }
   .legend { color: #888; font-size: .9rem; }
   .dead { color: #f55 !important; }
+  .nodegrp { border: 1px solid #444; padding: .5rem; margin-bottom: .5rem; }
+  .nodegrp legend { color: #aaa; font-size: .9rem; }
+  .nodebtn { padding: .5rem .8rem; margin: .2rem; cursor: pointer;
+             background: #333; color: #eee; border: 1px solid #555;
+             border-radius: 4px; }
+  .nodebtn.on { background: #060; border-color: #0a0; }
+  .slider { display: flex; align-items: center; gap: .5rem;
+            margin-bottom: .2rem; }
+  .slider label { width: 12rem; font-size: .85rem; color: #bbb;
+                  text-align: right; }
+  .slider input[type=range] { width: 200px; }
+  .slider input[type=number] { width: 5.5rem; background: #222;
+                               color: #eee; border: 1px solid #555; }
+  #preset-box { margin-top: .8rem; display: flex; gap: .4rem;
+                align-items: center; flex-wrap: wrap; }
+  #preset-box input, #preset-box select, #preset-box button {
+    background: #222; color: #eee; border: 1px solid #555; padding: .3rem; }
+  #preset-msg, #tune-status { color: #8a8; font-size: .9rem; }
+  .msg-err { color: #f77 !important; }
 </style>
 <script>
   // 영상이 실제로 오는지 img 이벤트로 판단한다. 검은 화면만 보이면
@@ -146,7 +181,11 @@
 
   // ── 상태 폴링 (10Hz) ────────────────────────────────────────────
   // WebSocket 을 쓰지 않는 이유: 10Hz 폴링에 과하고 의존성이 늘어난다.
-  const T_LIMITS = [3.0, 3.0, 3.0, 3.0, 5.0, 5.0];  // max_current_* 기본값
+  // max_current_* 는 런타임에 오버라이드될 수 있다(예: 1.0A 캡 운용).
+  // 서버가 활성 조종 노드에서 실제 값을 읽어 /state 에 실어 보내므로
+  // 그것을 우선 쓰고, 조종 노드가 없어 null 이면 기본값으로 폴백한다.
+  const T_LIMITS_DEFAULT = [3.0, 3.0, 3.0, 3.0, 5.0, 5.0];
+  let T_LIMITS = T_LIMITS_DEFAULT;
   const hist = {yaw: [], depth: []};
   const HIST_MAX = 300;   // 30초 × 10Hz
 
@@ -261,6 +300,8 @@
     setText('v-conf', w ? fmt(w[4], 0, '%') : '–', !w);
     setText('v-wmode', s.wall_mode || '–', !s.wall_mode);
 
+    T_LIMITS = s.max_current || T_LIMITS_DEFAULT;
+    if (s.nodes) { nodeState = s.nodes; paintNodes(); refreshTune(); }
     drawThrusters(s.thrusters);
     push(hist.yaw, y ? y[2] : 0);
     push(hist.depth, d ? d[2] : 0);
@@ -269,6 +310,172 @@
 
   setInterval(poll, 100);
   poll();
+
+  // ── 노드 토글 ───────────────────────────────────────────────────
+  // 그룹이 같은 노드는 서버가 상호배타를 강제한다. UI 도 같은 그룹을
+  // 한 상자에 묶어 사용자가 충돌 조합을 만들 수 없다는 걸 보이게 한다.
+  const NODE_GROUPS = [
+    {title: '센서 (자유롭게 켜고 끄기)',
+     keys: ['pressure', 'dvl', 'imu', 'led', 'sonar']},
+    {title: '측위 — 하나만 (stellarHD 카메라 공유)',
+     keys: ['localization', 'aruco']},
+    {title: '조종 — 하나만 (CAN 버스 공유)',
+     keys: ['teleop', 'wall_align']},
+  ];
+  const NODE_LABELS = {
+    pressure: '압력 (Bar10XT)', dvl: 'DVL-A50', imu: 'IMU (GV7-INS)',
+    led: 'Lumen LED', sonar: 'Ping1D 소나',
+    localization: '측위 (UKFM + ArUco)', aruco: 'ArUco 단독',
+    teleop: '수동 조종 (teleop)', wall_align: '벽면 정렬 (wall_align)',
+  };
+  // 서버의 CONTROL_NODE_NAMES 와 정확히 일치해야 한다.
+  const CONTROL_NODE_NAMES = {
+    teleop: 'keyboard_teleop_robust',
+    wall_align: 'keyboard_teleop_wall_align',
+  };
+  let nodeState = {};
+
+  function buildNodes() {
+    const box = document.getElementById('nodes');
+    box.innerHTML = '';
+    for (const g of NODE_GROUPS) {
+      const fs = document.createElement('fieldset');
+      fs.className = 'nodegrp';
+      fs.innerHTML = `<legend>${g.title}</legend>`;
+      for (const k of g.keys) {
+        const b = document.createElement('button');
+        b.className = 'nodebtn';
+        b.id = 'nb-' + k;
+        b.textContent = NODE_LABELS[k];
+        b.addEventListener('click', () => toggleNode(k));
+        fs.appendChild(b);
+      }
+      box.appendChild(fs);
+    }
+  }
+  buildNodes();
+
+  async function toggleNode(key) {
+    const btn = document.getElementById('nb-' + key);
+    btn.disabled = true;
+    try {
+      const r = await (await fetch('/node', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: key, on: !nodeState[key]}),
+      })).json();
+      if (!r.ok) alert(r.msg);
+      nodeState = r.nodes || nodeState;
+      paintNodes();
+      refreshTune();
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function paintNodes() {
+    for (const k in NODE_LABELS) {
+      const b = document.getElementById('nb-' + k);
+      if (b) b.classList.toggle('on', !!nodeState[k]);
+    }
+  }
+
+  // ── 게인 튜닝 ───────────────────────────────────────────────────
+  // 파라미터 목록을 하드코딩하지 않는다 — 서버가 노드에서 직접 읽어온다.
+  // 노드마다 선언 집합이 다르고(teleop 약 40, wall_align 약 60),
+  // read_only 로 표시된 물성값은 서버가 이미 걸러낸다.
+  let tuneNode = null;
+
+  function activeControlNode() {
+    if (nodeState.teleop) return CONTROL_NODE_NAMES.teleop;
+    if (nodeState.wall_align) return CONTROL_NODE_NAMES.wall_align;
+    return null;
+  }
+
+  async function refreshTune() {
+    const target = activeControlNode();
+    if (target === tuneNode) return;      // 변화 없음
+    tuneNode = target;
+    const sl = document.getElementById('sliders');
+    const st = document.getElementById('tune-status');
+    sl.innerHTML = '';
+    if (!target) {
+      st.textContent = '조종 노드를 켜면 게인 슬라이더가 나타납니다.';
+      return;
+    }
+    st.textContent = `${target} 파라미터를 읽는 중…`;
+    const r = await (await fetch(
+      '/params?node=' + encodeURIComponent(target))).json();
+    if (!r.ok) { st.textContent = r.msg; st.classList.add('msg-err'); return; }
+    st.classList.remove('msg-err');
+    st.textContent = `${target} — ${r.params.length}개 파라미터`;
+
+    for (const p of r.params) {
+      // 범위는 현재 값 기준으로 잡는다. 0 이면 고정 범위를 준다.
+      const base = Math.abs(p.value) > 1e-9 ? Math.abs(p.value) : 1;
+      const max = base * 4, step = p.type === 'integer' ? 1 : base / 200;
+      const row = document.createElement('div');
+      row.className = 'slider';
+      row.innerHTML =
+        `<label for="sr-${p.name}">${p.name}</label>` +
+        `<input type="range" id="sr-${p.name}" min="0" max="${max}"` +
+        ` step="${step}" value="${p.value}">` +
+        `<input type="number" id="sn-${p.name}" step="${step}"` +
+        ` value="${p.value}">`;
+      document.getElementById('sliders').appendChild(row);
+
+      const range = document.getElementById('sr-' + p.name);
+      const num = document.getElementById('sn-' + p.name);
+      const apply = v => {
+        range.value = v; num.value = v;
+        fetch('/param', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(
+            {node: target, name: p.name, value: parseFloat(v)}),
+        }).then(r => r.json()).then(r => {
+          if (!r.ok) { st.textContent = r.msg; st.classList.add('msg-err'); }
+        }).catch(() => {});
+      };
+      range.addEventListener('input', () => apply(range.value));
+      num.addEventListener('change', () => apply(num.value));
+    }
+  }
+
+  // ── 프리셋 ──────────────────────────────────────────────────────
+  const pmsg = document.getElementById('preset-msg');
+
+  async function presetCall(action, name) {
+    const target = activeControlNode();
+    if (!target) { pmsg.textContent = '조종 노드를 먼저 켜세요'; return; }
+    const r = await (await fetch('/preset', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: action, name: name, node: target}),
+    })).json();
+    pmsg.textContent = r.msg || '';
+    pmsg.classList.toggle('msg-err', !r.ok);
+    const sel = document.getElementById('preset-sel');
+    sel.innerHTML = '';
+    for (const p of (r.presets || [])) {
+      const o = document.createElement('option');
+      o.value = o.textContent = p;
+      sel.appendChild(o);
+    }
+    if (action === 'load' && r.ok) { tuneNode = null; refreshTune(); }
+  }
+
+  document.getElementById('preset-save').addEventListener('click', () => {
+    const n = document.getElementById('preset-name').value.trim();
+    if (!n) { pmsg.textContent = '이름을 입력하세요'; return; }
+    presetCall('save', n);
+  });
+  document.getElementById('preset-load').addEventListener('click', () => {
+    const n = document.getElementById('preset-sel').value;
+    if (!n) { pmsg.textContent = '불러올 프리셋이 없습니다'; return; }
+    presetCall('load', n);
+  });
+  presetCall('list', '');
 </script>
 </body>
 </html>

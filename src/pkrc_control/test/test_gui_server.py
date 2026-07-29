@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pkrc_control.gui_server import (
     mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS,
-    TopicCache)
+    TopicCache, NODE_SPECS, group_siblings, CONTROL_NODE_NAMES)
 
 
 def test_mjpeg_frame_structure():
@@ -137,6 +137,74 @@ def test_topic_cache_overwrites():
     assert tc.get(now=100.2) == [2.0]
 
 
+def test_node_specs_shape():
+    """모든 노드 스펙이 필수 키를 갖는지."""
+    for key, spec in NODE_SPECS.items():
+        assert 'label' in spec, f'{key}: label 없음'
+        assert 'cmd' in spec, f'{key}: cmd 없음'
+        assert isinstance(spec['cmd'], list), f'{key}: cmd 가 리스트 아님'
+        assert spec['cmd'], f'{key}: cmd 가 비었음'
+        assert 'group' in spec, f'{key}: group 없음'
+
+
+def test_excluded_cameras_absent():
+    """exploreHD gscam 과 stellarHD usb_cam 은 UI 에 없어야 한다 —
+    각각 레이저 카메라(/dev/video0)와 ArUco(/dev/video4)를 다툰다."""
+    joined = ' '.join(
+        ' '.join(s['cmd']) for s in NODE_SPECS.values()).lower()
+    assert 'gscam' not in joined
+    assert 'usb_cam' not in joined
+    assert 'full_system' not in joined
+
+
+def test_group_siblings_video4():
+    """video4 그룹은 localization 과 aruco 가 서로 형제다."""
+    assert group_siblings('localization') == ['aruco']
+    assert group_siblings('aruco') == ['localization']
+
+
+def test_group_siblings_control():
+    """control 그룹은 teleop 과 wall_align 이 서로 형제다."""
+    assert group_siblings('teleop') == ['wall_align']
+    assert group_siblings('wall_align') == ['teleop']
+
+
+def test_group_siblings_none_for_ungrouped():
+    """그룹 없는 센서는 형제가 없다 — 자유롭게 켜고 끈다."""
+    assert group_siblings('sonar') == []
+    assert group_siblings('imu') == []
+
+
+def test_control_group_has_exactly_two():
+    """조종 노드는 정확히 둘이어야 한다. 셋이 되면 CAN 충돌 위험이
+    커지므로 인터록 설계를 다시 봐야 한다."""
+    ctrl = [k for k, s in NODE_SPECS.items() if s['group'] == 'control']
+    assert sorted(ctrl) == ['teleop', 'wall_align']
+
+
+def test_control_node_names_match_source():
+    """CONTROL_NODE_NAMES 가 실제 super().__init__() 인수와 일치하는지.
+
+    이름이 틀리면 파라미터 서비스 경로(/노드명/set_parameters)가 존재하지
+    않아 게인 튜닝이 조용히 전부 실패한다. 소스에서 직접 읽어 비교한다.
+    """
+    import re
+
+    src_dir = os.path.join(os.path.dirname(__file__), '..', 'pkrc_control')
+    files = {
+        'teleop': 'keyboard_control_teleop.py',
+        'wall_align': 'keyboard_control_wall_align.py',
+    }
+    for key, fname in files.items():
+        with open(os.path.join(src_dir, fname)) as f:
+            m = re.search(r"super\(\)\.__init__\('([^']+)'\)", f.read())
+        assert m, f'{fname}: super().__init__() 를 찾을 수 없음'
+        actual = m.group(1)
+        assert CONTROL_NODE_NAMES[key] == actual, (
+            f'{key}: CONTROL_NODE_NAMES 는 '
+            f'{CONTROL_NODE_NAMES[key]!r} 인데 소스는 {actual!r}')
+
+
 if __name__ == '__main__':
     test_mjpeg_frame_structure()
     test_mjpeg_frame_does_not_alter_payload()
@@ -150,4 +218,11 @@ if __name__ == '__main__':
     test_watchdog_ignores_depth_keys()
     test_topic_cache_stale()
     test_topic_cache_overwrites()
-    print('test_gui_server: 13 passed')
+    test_node_specs_shape()
+    test_excluded_cameras_absent()
+    test_group_siblings_video4()
+    test_group_siblings_control()
+    test_group_siblings_none_for_ungrouped()
+    test_control_group_has_exactly_two()
+    test_control_node_names_match_source()
+    print('test_gui_server: 18 passed')
