@@ -950,13 +950,19 @@ class GuiServer(Node):
         # get_node_names() 는 로컬 캐시 조회라 서비스 왕복보다 훨씬 싸다.
         live_names = None
         max_current = None
+        # 어느 조종 노드가 살아있는지도 브라우저에 알려준다. 브라우저가
+        # nodes(ProcManager 장부)만 보면 터미널에서 띄운 노드를 못 찾아
+        # 게인 슬라이더가 뜨지 않는다 — max_current 와 같은 문제였다.
+        control_node = None
         for key, node_name in CONTROL_NODE_NAMES.items():
             if nodes.get(key):
+                control_node = node_name
                 max_current = self.get_max_current(node_name)
                 break
             if live_names is None:
                 live_names = self.get_node_names()
             if node_name in live_names:
+                control_node = node_name
                 max_current = self.get_max_current(node_name)
                 break
         return {
@@ -973,6 +979,7 @@ class GuiServer(Node):
             'wall_mode': self.tc_wall_mode.get(),
             'nodes': nodes,
             'max_current': max_current,
+            'control_node': control_node,
         }
 
     def shutdown(self):
