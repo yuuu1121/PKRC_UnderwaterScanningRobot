@@ -13,7 +13,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pkrc_control.gui_server import mjpeg_frame, BOUNDARY
+from pkrc_control.gui_server import mjpeg_frame, BOUNDARY, FrameStore
 
 
 def test_mjpeg_frame_structure():
@@ -39,7 +39,30 @@ def test_mjpeg_frame_does_not_alter_payload():
     assert body == payload + b'\r\n'
 
 
+def test_frame_store_returns_latest():
+    """FrameStore 는 항상 가장 최근 프레임만 준다 (depth=1 의미)."""
+    fs = FrameStore()
+    assert fs.get() == (None, 0.0)
+
+    fs.put(b'first', 100.0)
+    fs.put(b'second', 101.0)
+    data, ts = fs.get()
+    assert data == b'second'
+    assert ts == 101.0
+
+
+def test_frame_store_age():
+    """프레임 없으면 age 가 무한, 있으면 경과 시간."""
+    fs = FrameStore()
+    assert fs.age(now=200.0) == float('inf')
+
+    fs.put(b'x', 100.0)
+    assert fs.age(now=100.5) == 0.5
+
+
 if __name__ == '__main__':
     test_mjpeg_frame_structure()
     test_mjpeg_frame_does_not_alter_payload()
-    print('test_gui_server(frame): 2 passed')
+    test_frame_store_returns_latest()
+    test_frame_store_age()
+    print('test_gui_server(frame): 4 passed')
