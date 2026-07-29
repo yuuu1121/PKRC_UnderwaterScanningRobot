@@ -23,7 +23,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import String
+from std_msgs.msg import String, Float64MultiArray
 
 # MJPEG multipart 경계 문자열. 브라우저가 프레임 구분에 쓴다.
 BOUNDARY = 'pkrcframe'
@@ -136,6 +136,34 @@ class KeyWatchdog:
         return None
 
 
+class TopicCache:
+    """토픽 최신값을 들고 있다가 오래되면 None 을 반환한다.
+
+    노드가 죽었을 때 마지막 값을 계속 보여주면 살아있는 것으로 오인한다.
+    stale_sec 을 넘기면 없는 것으로 취급해 UI 가 비활성으로 그리게 한다.
+    """
+
+    def __init__(self, stale_sec: float = 1.0):
+        self.stale_sec = stale_sec
+        self._lock = threading.Lock()
+        self._value = None
+        self._stamp = 0.0
+
+    def put(self, value, now: float = None):
+        with self._lock:
+            self._value = value
+            self._stamp = time.time() if now is None else now
+
+    def get(self, now: float = None):
+        with self._lock:
+            if self._value is None:
+                return None
+            t = time.time() if now is None else now
+            if t - self._stamp > self.stale_sec:
+                return None
+            return self._value
+
+
 class _Handler(BaseHTTPRequestHandler):
     """HTTP 요청 처리. self.server.node 로 GuiServer 에 접근한다."""
 
@@ -193,6 +221,9 @@ class _Handler(BaseHTTPRequestHandler):
                            f'gui.html 을 읽을 수 없음: {e}'.encode())
         elif self.path == '/stream':
             self._stream_mjpeg(node)
+        elif self.path == '/state':
+            self._send(200, 'application/json',
+                       json.dumps(node.state_snapshot()).encode())
         else:
             self._send(404, 'text/plain; charset=utf-8', b'not found')
 
@@ -269,6 +300,30 @@ class GuiServer(Node):
         # 10Hz 로 통신 생존 확인 — 끊기면 강제 정지
         self.create_timer(0.1, self._watchdog_tick)
 
+        # ── 텔레메트리 ─────────────────────────────────────────────────
+        # 조종 노드들이 이미 전부 퍼블리시한다 — 새로 계산할 것이 없다.
+        self.tc_yaw = TopicCache()
+        self.tc_depth = TopicCache()
+        self.tc_thrust = TopicCache()
+        self.tc_wall = TopicCache()
+        self.tc_wall_mode = TopicCache()
+
+        self.create_subscription(
+            Float64MultiArray, '/teleop/yaw_debug',
+            lambda m: self.tc_yaw.put(list(m.data)), 10)
+        self.create_subscription(
+            Float64MultiArray, '/teleop/depth_debug',
+            lambda m: self.tc_depth.put(list(m.data)), 10)
+        self.create_subscription(
+            Float64MultiArray, '/teleop/thruster_currents',
+            lambda m: self.tc_thrust.put(list(m.data)), 10)
+        self.create_subscription(
+            Float64MultiArray, '/teleop/wall_debug',
+            lambda m: self.tc_wall.put(list(m.data)), 10)
+        self.create_subscription(
+            String, '/teleop/wall_mode',
+            lambda m: self.tc_wall_mode.put(m.data), 10)
+
         self._httpd = ThreadingHTTPServer((host, port), _Handler)
         self._httpd.node = self
         self._http_thread = threading.Thread(
@@ -321,6 +376,24 @@ class GuiServer(Node):
         return os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'resource', 'gui.html')
+
+    def state_snapshot(self) -> dict:
+        """브라우저에 보낼 현재 상태 전체."""
+        age = self.frame_age()
+        return {
+            'camera': {
+                # 1초 넘게 프레임이 없으면 카메라 노드가 죽은 것으로 본다.
+                # 검은 화면만 보여주면 원인을 알 수 없으므로 명시한다.
+                'alive': age < 1.0,
+                'age': None if age == float('inf') else round(age, 2),
+            },
+            'yaw': self.tc_yaw.get(),
+            'depth': self.tc_depth.get(),
+            'thrusters': self.tc_thrust.get(),
+            'wall': self.tc_wall.get(),
+            'wall_mode': self.tc_wall_mode.get(),
+            'nodes': {},
+        }
 
     def shutdown(self):
         self._httpd.shutdown()

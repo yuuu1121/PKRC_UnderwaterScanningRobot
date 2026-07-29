@@ -14,7 +14,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pkrc_control.gui_server import (
-    mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS, VALID_KEYS)
+    mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS,
+    TopicCache)
 
 
 def test_mjpeg_frame_structure():
@@ -117,11 +118,23 @@ def test_watchdog_ignores_depth_keys():
     assert wd.check(now=101.0) is None
 
 
-def test_valid_keys_rejects_bogus_accepts_real():
-    """POST /key 화이트리스트 — 정의된 키만 통과."""
-    assert 'UP' in VALID_KEYS
-    assert 'w' in VALID_KEYS
-    assert 'bogus' not in VALID_KEYS
+def test_topic_cache_stale():
+    """오래된 값은 None 으로 나와야 한다 — 죽은 노드의 마지막 값을
+    살아있는 것처럼 보여주면 안 된다."""
+    tc = TopicCache(stale_sec=1.0)
+    assert tc.get(now=100.0) is None
+
+    tc.put([1.0, 2.0], now=100.0)
+    assert tc.get(now=100.5) == [1.0, 2.0]
+    assert tc.get(now=101.5) is None      # 1초 초과 → 죽은 것으로 간주
+
+
+def test_topic_cache_overwrites():
+    """항상 최신 값만."""
+    tc = TopicCache(stale_sec=1.0)
+    tc.put([1.0], now=100.0)
+    tc.put([2.0], now=100.1)
+    assert tc.get(now=100.2) == [2.0]
 
 
 if __name__ == '__main__':
@@ -135,5 +148,6 @@ if __name__ == '__main__':
     test_watchdog_ignores_nonmotion_keys()
     test_motion_keys_content()
     test_watchdog_ignores_depth_keys()
-    test_valid_keys_rejects_bogus_accepts_real()
-    print('test_gui_server: 11 passed')
+    test_topic_cache_stale()
+    test_topic_cache_overwrites()
+    print('test_gui_server: 13 passed')

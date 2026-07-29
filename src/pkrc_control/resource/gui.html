@@ -34,6 +34,31 @@
     <button data-key="x" class="stop">X 정지</button>
   </div>
 </div>
+<h2>상태</h2>
+<div id="mon">
+  <table id="nums">
+    <tr><th>방위 목표</th><td id="v-yaw-t">–</td>
+        <th>방위 현재</th><td id="v-yaw-c">–</td>
+        <th>오차</th><td id="v-yaw-e">–</td></tr>
+    <tr><th>수심 목표</th><td id="v-dep-t">–</td>
+        <th>수심 현재</th><td id="v-dep-c">–</td>
+        <th>압력</th><td id="v-pres">–</td></tr>
+    <tr><th>DVL surge</th><td id="v-dvl-x">–</td>
+        <th>DVL sway</th><td id="v-dvl-y">–</td>
+        <th>pitch</th><td id="v-pitch">–</td></tr>
+    <tr><th>소나 거리</th><td id="v-sonar">–</td>
+        <th>소나 신뢰도</th><td id="v-conf">–</td>
+        <th>벽정렬 상태</th><td id="v-wmode">–</td></tr>
+  </table>
+
+  <h3>스러스터 전류</h3>
+  <div id="thrusters"></div>
+
+  <h3>추이 (최근 30초)</h3>
+  <canvas id="chart" width="600" height="160"></canvas>
+  <p class="legend"><span style="color:#4af">■</span> 방위 오차 [°]
+     <span style="color:#fa4">■</span> 수심 오차 [m]</p>
+</div>
 <style>
   body { font-family: system-ui, sans-serif; margin: 1rem;
          background: #111; color: #eee; }
@@ -46,6 +71,23 @@
                 border-radius: 4px; min-width: 6rem; }
   #pad button:active { background: #06c; }
   #pad button.stop { background: #833; }
+  #nums { border-collapse: collapse; margin-bottom: 1rem; }
+  #nums th, #nums td { border: 1px solid #444; padding: .3rem .6rem;
+                       text-align: right; font-variant-numeric: tabular-nums; }
+  #nums th { background: #222; color: #aaa; font-weight: normal; }
+  .tbar { display: flex; align-items: center; gap: .5rem;
+          margin-bottom: .2rem; }
+  .tbar .name { width: 2.5rem; color: #aaa; }
+  .tbar .track { position: relative; width: 260px; height: 14px;
+                 background: #222; border: 1px solid #444; }
+  .tbar .fill { position: absolute; top: 0; bottom: 0; left: 50%;
+                background: #4af; }
+  .tbar .val { width: 4rem; font-variant-numeric: tabular-nums; }
+  .tbar .limit { position: absolute; top: -2px; bottom: -2px;
+                 width: 1px; background: #f44; }
+  #chart { background: #1a1a1a; border: 1px solid #444; max-width: 100%; }
+  .legend { color: #888; font-size: .9rem; }
+  .dead { color: #f55 !important; }
 </style>
 <script>
   // 영상이 실제로 오는지 img 이벤트로 판단한다. 검은 화면만 보이면
@@ -101,6 +143,132 @@
     if (document.hidden) stopHold();
   });
   window.addEventListener('blur', stopHold);
+
+  // ── 상태 폴링 (10Hz) ────────────────────────────────────────────
+  // WebSocket 을 쓰지 않는 이유: 10Hz 폴링에 과하고 의존성이 늘어난다.
+  const T_LIMITS = [3.0, 3.0, 3.0, 3.0, 5.0, 5.0];  // max_current_* 기본값
+  const hist = {yaw: [], depth: []};
+  const HIST_MAX = 300;   // 30초 × 10Hz
+
+  function fmt(v, digits, unit) {
+    if (v === null || v === undefined) return '–';
+    return v.toFixed(digits) + (unit || '');
+  }
+
+  function setText(id, text, dead) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.classList.toggle('dead', !!dead);
+  }
+
+  function buildThrusters() {
+    const box = document.getElementById('thrusters');
+    box.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+      const row = document.createElement('div');
+      row.className = 'tbar';
+      row.innerHTML =
+        `<span class="name">T${i + 1}</span>` +
+        `<span class="track"><span class="fill" id="tf${i}"></span></span>` +
+        `<span class="val" id="tv${i}">–</span>`;
+      box.appendChild(row);
+    }
+  }
+  buildThrusters();
+
+  function drawThrusters(cur) {
+    for (let i = 0; i < 6; i++) {
+      const fill = document.getElementById('tf' + i);
+      const val = document.getElementById('tv' + i);
+      if (!cur) { fill.style.width = '0'; val.textContent = '–'; continue; }
+      const a = cur[i] || 0;
+      // 중앙 기준 좌우 확장. 한계 대비 비율로 폭을 정해 포화가 눈에 보인다.
+      const frac = Math.min(Math.abs(a) / T_LIMITS[i], 1) * 50;
+      fill.style.width = frac + '%';
+      fill.style.left = a >= 0 ? '50%' : (50 - frac) + '%';
+      fill.style.background = Math.abs(a) >= T_LIMITS[i] * 0.98
+        ? '#f44' : '#4af';
+      val.textContent = a.toFixed(2) + 'A';
+    }
+  }
+
+  function drawChart() {
+    const c = document.getElementById('chart');
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, c.width, c.height);
+
+    // 0 기준선
+    g.strokeStyle = '#444';
+    g.beginPath();
+    g.moveTo(0, c.height / 2);
+    g.lineTo(c.width, c.height / 2);
+    g.stroke();
+
+    const series = [
+      {data: hist.yaw, color: '#4af', scale: 30},   // ±30° 를 화면 절반
+      {data: hist.depth, color: '#fa4', scale: 0.5}, // ±0.5m
+    ];
+    for (const s of series) {
+      if (s.data.length < 2) continue;
+      g.strokeStyle = s.color;
+      g.beginPath();
+      s.data.forEach((v, i) => {
+        const x = (i / (HIST_MAX - 1)) * c.width;
+        const y = c.height / 2
+                - Math.max(-1, Math.min(1, v / s.scale)) * (c.height / 2 - 4);
+        i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+      });
+      g.stroke();
+    }
+  }
+
+  function push(arr, v) {
+    arr.push(v);
+    while (arr.length > HIST_MAX) arr.shift();
+  }
+
+  async function poll() {
+    let s;
+    try {
+      s = await (await fetch('/state')).json();
+    } catch (e) {
+      setText('cam-status', '서버 연결 끊김', true);
+      return;
+    }
+
+    // 카메라 생존
+    if (!s.camera.alive) {
+      status.textContent = s.camera.age === null
+        ? '영상 없음 — laser_camera_publisher 가 떠 있는지 확인하세요.'
+        : `영상 정지 ${s.camera.age}초 — 카메라 노드를 확인하세요.`;
+      status.classList.add('dead');
+    } else {
+      status.textContent = '';
+      status.classList.remove('dead');
+    }
+
+    const y = s.yaw, d = s.depth, w = s.wall;
+    setText('v-yaw-t', y ? fmt(y[0], 1, '°') : '–', !y);
+    setText('v-yaw-c', y ? fmt(y[1], 1, '°') : '–', !y);
+    setText('v-yaw-e', y ? fmt(y[2], 1, '°') : '–', !y);
+    setText('v-dep-t', d ? fmt(d[0], 2, 'm') : '–', !d);
+    setText('v-dep-c', d ? fmt(d[1], 2, 'm') : '–', !d);
+    setText('v-pres', d ? fmt(d[5] / 1000, 1, 'kPa') : '–', !d);
+    setText('v-dvl-x', y ? fmt(y[8], 3, 'm/s') : '–', !y);
+    setText('v-dvl-y', y ? fmt(y[9], 3, 'm/s') : '–', !y);
+    setText('v-pitch', y ? fmt(y[6], 1, '°') : '–', !y);
+    setText('v-sonar', w ? fmt(w[1], 2, 'm') : '–', !w);
+    setText('v-conf', w ? fmt(w[4], 0, '%') : '–', !w);
+    setText('v-wmode', s.wall_mode || '–', !s.wall_mode);
+
+    drawThrusters(s.thrusters);
+    push(hist.yaw, y ? y[2] : 0);
+    push(hist.depth, d ? d[2] : 0);
+    drawChart();
+  }
+
+  setInterval(poll, 100);
+  poll();
 </script>
 </body>
 </html>
