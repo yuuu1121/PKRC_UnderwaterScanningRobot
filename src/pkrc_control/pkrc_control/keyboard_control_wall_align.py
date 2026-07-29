@@ -742,6 +742,13 @@ class KeyboardTeleopWallAlign(Node):
         self.ramp_step = 0.5
 
         # ── ROS I/O ────────────────────────────────────────────────────
+        # ── 웹 GUI 키 입력 ─────────────────────────────────────────────
+        # gui_server 가 /gui/key 로 키를 보낸다. stdin(터미널) 경로는 그대로
+        # 살아 있고, 이건 추가 입력 채널일 뿐이다 — 둘 중 아무거나 써도 된다.
+        # C 키(정렬 시퀀스)와 중단 키도 이 경로로 들어온다.
+        self._pending_gui_key = ''
+        self.create_subscription(String, '/gui/key', self._gui_key_cb, 10)
+
         self.create_subscription(Imu, '/imu/data', self.imu_callback, 10)
         self.create_subscription(FluidPressure, '/bar10xt/pressure',
                                  self.pressure_callback,
@@ -1016,8 +1023,16 @@ class KeyboardTeleopWallAlign(Node):
                 or self.sonar_last_rx == 0.0
                 or (now - self.sonar_last_rx) > self.sonar_stale_sec)
 
+    def _gui_key_cb(self, msg: String):
+        """웹 GUI 키를 큐에 넣는다. 다음 get_key() 가 소비한다."""
+        self._pending_gui_key = msg.data
+
     # ─── Keyboard ───────────────────────────────────────────────────
     def get_key(self):
+        # 웹 GUI 로 들어온 키를 먼저 소비 (한 번만 반환)
+        if self._pending_gui_key:
+            k, self._pending_gui_key = self._pending_gui_key, ''
+            return k
         if self.settings is None:
             rlist, _, _ = select.select([sys.stdin], [], [], 0.02)
             if rlist:
