@@ -548,11 +548,16 @@
     for (const k in NODE_LABELS) {
       const b = document.getElementById('nb-' + k);
       if (!b) continue;
-      // 터미널에서 띄운 조종 노드도 켜진 것으로 표시한다 — 실제로 돌고 있는데
-      // 버튼이 꺼져 보이면 눌러서 중복 기동을 시도하게 된다.
-      const external = serverControlNode &&
-                       CONTROL_NODE_NAMES[k] === serverControlNode;
-      b.classList.toggle('on', !!nodeState[k] || !!external);
+      // 조종 그룹(teleop/wall_align)은 서버가 상호배타를 강제하므로 절대
+      // 둘이 동시에 켜져 보여선 안 된다. 그래서 control_node(실제로 살아있는
+       // 노드) 하나만 신뢰하고, 장부(nodeState)와 OR 하지 않는다 — OR 하면
+      // 전환 직후 새 노드는 장부에서 on, 옛 노드는 control_node 에 아직
+      // 남아 둘 다 켜진 것처럼 보인다(실측 확인).
+      const isControl = (k === 'teleop' || k === 'wall_align');
+      const on = isControl
+        ? CONTROL_NODE_NAMES[k] === serverControlNode
+        : !!nodeState[k];
+      b.classList.toggle('on', on);
     }
   }
 
