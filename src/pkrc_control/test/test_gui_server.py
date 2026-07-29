@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pkrc_control.gui_server import (
     mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS,
-    TopicCache, NODE_SPECS, group_siblings, CONTROL_NODE_NAMES)
+    TopicCache, NODE_SPECS, group_siblings, CONTROL_NODE_NAMES,
+    build_cmd, DEFAULT_MAX_CURRENT, PRESET_DIR, GuiServer, _is_number)
 
 
 def test_mjpeg_frame_structure():
@@ -205,6 +206,66 @@ def test_control_node_names_match_source():
             f'{CONTROL_NODE_NAMES[key]!r} 인데 소스는 {actual!r}')
 
 
+def test_build_cmd_control_gets_current_override():
+    """control 노드는 요청한 전류 한계 3종이 모두 argv 에 붙는다."""
+    cmd = build_cmd('teleop', max_current=2.5)
+    joined = ' '.join(cmd)
+    assert 'max_current_surge:=2.5' in joined
+    assert 'max_current_sway:=2.5' in joined
+    assert 'max_current_heave:=2.5' in joined
+
+
+def test_build_cmd_default_current():
+    """max_current 를 안 주면 DEFAULT_MAX_CURRENT 가 쓰인다."""
+    joined = ' '.join(build_cmd('wall_align'))
+    assert f'max_current_surge:={DEFAULT_MAX_CURRENT}' in joined
+
+
+def test_build_cmd_non_control_no_override():
+    """조종이 아닌 노드는 전류 오버라이드가 붙지 않는다."""
+    joined = ' '.join(build_cmd('sonar', max_current=2.5))
+    assert 'max_current' not in joined
+
+
+def test_build_cmd_does_not_mutate_node_specs():
+    """NODE_SPECS 는 템플릿이다 — build_cmd 호출이 원본을 바꾸면 다음
+    시작에 이전 호출의 전류값이 새어 들어간다."""
+    before = list(NODE_SPECS['teleop']['cmd'])
+    build_cmd('teleop', max_current=3.3)
+    assert NODE_SPECS['teleop']['cmd'] == before
+
+
+def test_preset_path_normal_name():
+    """정상 이름은 PRESET_DIR 아래 .yaml 로 매핑된다."""
+    p = GuiServer.preset_path(None, 'test1')
+    assert p == os.path.join(PRESET_DIR, 'test1.yaml')
+
+
+def test_preset_path_rejects_unsafe_names():
+    """경로 구분자나 점(.) 시작, 빈 이름은 조용히 치환하지 않고 거부한다."""
+    for bad in ('../../etc/evil', 'a/b', 'a\\b', '.hidden', ''):
+        try:
+            GuiServer.preset_path(None, bad)
+            assert False, f'{bad!r} 가 거부되지 않음'
+        except ValueError:
+            pass
+
+
+def test_is_number_accepts_numbers():
+    assert _is_number(1.0) and _is_number(99) and _is_number(0)
+
+
+def test_is_number_rejects_string_bool_none_list():
+    """POST /node 의 max_current, POST /param 의 value 가 공유하는 검사.
+    문자열은 float()/비교 연산에서 예외를 던지고, bool 은
+    isinstance(True, int) 가 참이라 걸러내지 않으면 1.0 으로 새어든다."""
+    assert not _is_number('99')
+    assert not _is_number(True)
+    assert not _is_number(False)
+    assert not _is_number(None)
+    assert not _is_number([1.0])
+
+
 if __name__ == '__main__':
     test_mjpeg_frame_structure()
     test_mjpeg_frame_does_not_alter_payload()
@@ -225,4 +286,12 @@ if __name__ == '__main__':
     test_group_siblings_none_for_ungrouped()
     test_control_group_has_exactly_two()
     test_control_node_names_match_source()
-    print('test_gui_server: 18 passed')
+    test_build_cmd_control_gets_current_override()
+    test_build_cmd_default_current()
+    test_build_cmd_non_control_no_override()
+    test_build_cmd_does_not_mutate_node_specs()
+    test_preset_path_normal_name()
+    test_preset_path_rejects_unsafe_names()
+    test_is_number_accepts_numbers()
+    test_is_number_rejects_string_bool_none_list()
+    print('test_gui_server: 27 passed')

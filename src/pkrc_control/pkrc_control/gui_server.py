@@ -151,6 +151,13 @@ CONTROL_NODE_NAMES = {
 PRESET_DIR = os.path.expanduser('~/.ros/pkrc_presets')
 
 
+def _is_number(v) -> bool:
+    """JSON 으로 들어온 값이 실제 숫자인지. bool 은 int 의 서브클래스라
+    isinstance(True, int) 가 참이므로 따로 제외한다 — 안 그러면
+    {"value": true} 가 1.0 으로 조용히 통과해버린다."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 def build_cmd(key: str, max_current: float = None) -> list:
     """NODE_SPECS[key]['cmd'] 에 control 그룹 전류 한계 오버라이드를 얹은
     argv. NODE_SPECS 는 mutate 하지 않는다 — 새 리스트를 반환한다."""
@@ -513,6 +520,15 @@ class _Handler(BaseHTTPRequestHandler):
             on = bool(body.get('on'))
             max_current = body.get('max_current')
             if max_current is not None:
+                # 타입이 틀리면(문자열 등) 범위 비교(<=) 자체가 예외를
+                # 던지므로 범위 검사보다 먼저 확인한다.
+                if not _is_number(max_current):
+                    self._send(400, 'application/json', json.dumps({
+                        'ok': False,
+                        'msg': 'max_current 는 숫자여야 합니다',
+                        'nodes': node.procs.status(),
+                    }).encode())
+                    return
                 lo, hi = MAX_CURRENT_RANGE
                 if not (lo <= max_current <= hi):
                     self._send(400, 'application/json', json.dumps({
@@ -528,9 +544,17 @@ class _Handler(BaseHTTPRequestHandler):
             }).encode())
 
         elif self.path == '/param':
+            value = body.get('value', 0.0)
+            # set_param() 내부가 float(value)/int(...) 를 예외 처리 없이
+            # 호출한다 — 문자열 등 숫자가 아닌 값은 여기서 미리 걸러
+            # 500 대신 400 을 낸다(POST /node 의 max_current 와 같은 문제).
+            if not _is_number(value):
+                self._send(400, 'application/json', json.dumps({
+                    'ok': False, 'msg': 'value 는 숫자여야 합니다',
+                }).encode())
+                return
             ok, msg = node.set_param(
-                body.get('node', ''), body.get('name', ''),
-                body.get('value', 0.0))
+                body.get('node', ''), body.get('name', ''), value)
             self._send(200, 'application/json',
                        json.dumps({'ok': ok, 'msg': msg}).encode())
 
@@ -1037,6 +1061,17 @@ def _selftest():
         except ValueError:
             pass
     print('selftest: preset_path OK')
+
+    # _is_number: /node 의 max_current, /param 의 value 가 공유하는 검사.
+    # 문자열·bool·리스트는 거부하고 int/float 만 통과해야 한다.
+    assert _is_number(1.0) and _is_number(99) and _is_number(0), \
+        '정상 숫자가 거부됨'
+    assert not _is_number('99'), '숫자 문자열이 통과됨'
+    assert not _is_number(True) and not _is_number(False), \
+        'bool 이 숫자로 통과됨 (isinstance(bool, int) 함정)'
+    assert not _is_number(None) and not _is_number([1.0]), \
+        'None/리스트가 통과됨'
+    print('selftest: _is_number OK')
 
 
 def main(args=None):
