@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"python3 -m py_compile src/bldc_control/bldc_control/keyboard_control_robust_update.py && python3 /tmp/claude-1000/-home-hero-hero-ws/276df42d-9a22-4359-9d6c-59a7d57def3a/scratchpad/test_ya...",
-  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"/tmp/claude-1000/-home-hero-hero-ws/276df42d-9a22-4359-9d6c-59a7d57def3a/scratchpad/test_yaw_routing.py\", line 28, in <module>\n    assert abs(c[2]) == abs(c[3]) == 0.9, c\nAssertionError: [1.5, 1.5, 0.8999999999999999, 0.8999999999999999, 0.0, 0.0]",
-  "timestamp": "2026-07-23T06:18:26.754Z",
-  "retry_count": 1
-}

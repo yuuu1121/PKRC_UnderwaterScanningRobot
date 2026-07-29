@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"source /opt/ros/humble/setup.bash 2>/dev/null && source install/setup.bash 2>/dev/null && SP=/tmp/claude-1000/-home-hero-hero-ws/cdae9e21-ad80-4279-93fd-30dc1d0ff598/scratchpad && (ros2 ru...",
-  "error": "Exit code 144\n=== 파라미터 ===\n  sonar_max_range      = Double value is: 5.0\n  sonar_min_range      = Double value is: 0.15\n  approach_grace_sec   = Double value is: 3.0",
-  "timestamp": "2026-07-27T08:40:28.687Z",
-  "retry_count": 3
-}

@@ -40,3 +40,6 @@ src/dvl_msgs/
 src/nmea_msgs/
 src/reach_robotics_sdk/
 src/dvl_a50/
+
+# ── OMC 런타임 상태 (운영 산출물) ──────────────────────────────────────
+.omc/
