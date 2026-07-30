@@ -335,16 +335,34 @@ class ProcManager:
         return p is not None and p.poll() is None
 
     def _external(self, key: str) -> bool:
-        """내가 띄우지 않았지만 실제로 돌고 있는 노드인가."""
+        """내가 띄우지 않았지만 실제로 돌고 있는 노드인가.
+
+        ROS 노드 등록(get_node_names)은 프로세스가 죽은 뒤에도 DDS 디스커버리
+        캐시에 몇 초 남는다. 그것만 믿으면 모드를 전환한 직후 옛 노드가
+        여전히 '켜짐' 으로 보여 두 조종 버튼이 동시에 켜지고, 게인 패널이
+        엉뚱한 노드를 조회한다(실측 3초간). 그래서 실제 프로세스 존재를
+        먼저 확인하고, 이름 등록은 보조로만 쓴다.
+        """
         if self._alive(key) or self._live_nodes is None:
             return False
         name = CONTROL_NODE_NAMES.get(key)
         if name is None:
             return False          # 조종 노드만 이름으로 조회할 수 있다
+        # 프로세스가 실제로 있는지가 먼저다 — 없으면 등록 잔상이다.
+        if not self._proc_exists(name):
+            return False
         try:
             return name in self._live_nodes()
         except Exception:
             return False
+
+    @staticmethod
+    def _proc_exists(node_name: str) -> bool:
+        """해당 조종 노드의 실행파일 프로세스가 실제로 있는지 (pgrep)."""
+        r = subprocess.run(
+            ['pgrep', '-f', f'lib/pkrc_control/{node_name}'],
+            capture_output=True)
+        return r.returncode == 0
 
     def _present(self, key: str) -> bool:
         """어떤 경로로든 실제로 돌고 있는가 (표시·인터록·정지 판정용)."""
@@ -1095,20 +1113,17 @@ class GuiServer(Node):
         # 띄우지 않은 조종 노드(예: 터미널에서 ros2 run 으로 띄운 경우)를
         # 놓친다 — 그래서 노드 이름이 실제로 존재하는지도 함께 본다.
         # get_node_names() 는 로컬 캐시 조회라 서비스 왕복보다 훨씬 싸다.
-        live_names = None
+        # 어느 조종 노드가 살아있는지 브라우저에 알려준다 — 게인 패널이
+        # 이 이름으로 파라미터를 조회한다.
+        # nodes 는 ProcManager.status() 결과이고, 그 _present() 가 이미
+        # '내가 띄운 것 + 외부 기동' 을 프로세스 실체로 판정한다. 여기서
+        # get_node_names() 를 다시 보면 DDS 등록 잔상 때문에 모드를 전환한
+        # 뒤에도 옛 노드 이름이 몇 초간 남아, 게인 패널이 죽은 노드를
+        # 조회해 실패한다(실측). 그래서 nodes 만 신뢰한다.
         max_current = None
-        # 어느 조종 노드가 살아있는지도 브라우저에 알려준다. 브라우저가
-        # nodes(ProcManager 장부)만 보면 터미널에서 띄운 노드를 못 찾아
-        # 게인 슬라이더가 뜨지 않는다 — max_current 와 같은 문제였다.
         control_node = None
         for key, node_name in CONTROL_NODE_NAMES.items():
             if nodes.get(key):
-                control_node = node_name
-                max_current = self.get_max_current(node_name)
-                break
-            if live_names is None:
-                live_names = self.get_node_names()
-            if node_name in live_names:
                 control_node = node_name
                 max_current = self.get_max_current(node_name)
                 break

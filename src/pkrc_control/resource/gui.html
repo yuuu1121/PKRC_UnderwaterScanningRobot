@@ -21,6 +21,12 @@
     <div id="cam-wrap">
       <img id="cam" src="/stream" alt="레이저 카메라">
     </div>
+    <div id="cam-ctrl">
+      <label>노출 <input type="range" id="cam-exp" min="1" max="5000"
+             step="1" value="50"><span id="cam-exp-v">50</span></label>
+      <label>감마 <input type="range" id="cam-gam" min="72" max="500"
+             step="1" value="100"><span id="cam-gam-v">100</span></label>
+    </div>
     <div id="pad">
       <div class="row">
         <button data-key="LEFT" data-hold="1">←</button>
@@ -28,9 +34,9 @@
         <button data-key="RIGHT" data-hold="1">→</button>
       </div>
       <div class="row">
-        <button data-key="a" data-hold="1">A ↻</button>
+        <button data-key="a" data-hold="1">A ↺</button>
         <button data-key="DOWN" data-hold="1">↓</button>
-        <button data-key="d" data-hold="1">D ↺</button>
+        <button data-key="d" data-hold="1">D ↻</button>
       </div>
       <div class="row">
         <button data-key="w">W 상승</button>
@@ -145,6 +151,16 @@
   #pad button.kbd { background: #06c; border-color: var(--accent); }
   #pad button.stop { background: #833; border-color: #a44; }
   #pad .hint { color: var(--dim); font-size: 10px; text-align: center; }
+
+  /* ── 카메라 노출·감마 ── 화면 바로 아래, 한 줄씩 */
+  #cam-ctrl { flex: 0 0 auto; display: flex; flex-direction: column;
+              gap: 2px; }
+  #cam-ctrl label { display: flex; align-items: center; gap: 5px;
+                    font-size: 10px; color: var(--dim); }
+  #cam-ctrl input[type=range] { flex: 1; accent-color: var(--accent);
+                                margin: 0; }
+  #cam-ctrl span { width: 2.4rem; text-align: right; color: var(--fg);
+                   font-variant-numeric: tabular-nums; }
 
   /* ── 노드 토글 ── */
   #nodes { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
@@ -540,6 +556,45 @@
     }
   }
   buildNodes();
+
+  // ── 카메라 노출·감마 ───────────────────────────────────────────
+  // laser_camera_publisher 의 ROS 파라미터를 그대로 쓴다(정수).
+  // 드래그 중 연속 전송하되 20Hz 로 제한 — v4l2-ctl 호출이 매번
+  // subprocess 라 그보다 자주 보내면 카메라 노드가 밀린다.
+  const CAM_MIN_INTERVAL = 50;
+  const camState = {exposure: {last: 0, pending: null},
+                    gamma: {last: 0, pending: null}};
+
+  function camFlush(name) {
+    const st = camState[name];
+    if (st.pending === null) return;
+    const v = st.pending; st.pending = null; st.last = Date.now();
+    fetch('/param', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(
+        {node: 'laser_camera_publisher', name: name, value: v}),
+    }).then(r => r.json()).then(r => {
+      if (!r.ok) console.warn('camera', name, r.msg);
+    }).catch(() => {});
+  }
+
+  function camSend(name, v) {
+    const st = camState[name];
+    st.pending = v;
+    const wait = CAM_MIN_INTERVAL - (Date.now() - st.last);
+    if (wait <= 0) camFlush(name); else setTimeout(() => camFlush(name), wait);
+  }
+
+  [['cam-exp', 'exposure'], ['cam-gam', 'gamma']].forEach(([id, name]) => {
+    const el = document.getElementById(id);
+    const out = document.getElementById(id + '-v');
+    if (!el) return;
+    el.addEventListener('input', () => {
+      out.textContent = el.value;
+      camSend(name, parseInt(el.value, 10));
+    });
+  });
 
   // ── LED 밝기 ────────────────────────────────────────────────────
   // 드래그 중 연속 전송하되 조종 키와 같은 20Hz 로 제한한다 — 슬라이더

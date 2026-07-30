@@ -22,6 +22,9 @@ CAMERA_DEVICE    = "/dev/video0"   # exploreHD USB Camera
 PUBLISH_TOPIC    = "/image_raw/compressed"
 PUBLISH_HZ       = 30
 DEFAULT_EXPOSURE = 50
+# gamma 는 이 카메라가 72~500 을 지원한다(v4l2-ctl --list-ctrls, 기본 100).
+# 레이저 선을 어두운 물속에서 볼 때 노출만으로는 부족해 함께 조절한다.
+DEFAULT_GAMMA    = 100
 # Native MJPG mode (v4l2-ctl --list-formats-ext).
 # Supported sizes: 1920x1080, 1280x720, 800x600, 640x480, 640x360.
 FRAME_WIDTH      = 1280
@@ -44,12 +47,14 @@ class LaserCameraPublisher(Node):
         super().__init__("laser_camera_publisher")
 
         self.declare_parameter("exposure", DEFAULT_EXPOSURE)
+        self.declare_parameter("gamma", DEFAULT_GAMMA)
         self.add_on_set_parameters_callback(self._on_param_change)
 
         # Manual exposure before opening the stream. Format/size/fps all come
         # from the pipeline caps, so v4l2-ctl only owns the controls now.
         self._v4l2_ctl("auto_exposure=1")   # 3: auto, 1: manual
         self._apply_exposure(DEFAULT_EXPOSURE)
+        self._apply_gamma(DEFAULT_GAMMA)
 
         self.cap = cv2.VideoCapture(GST_PIPELINE, cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
@@ -100,10 +105,16 @@ class LaserCameraPublisher(Node):
         if self._v4l2_ctl(f"exposure_time_absolute={value}"):
             self.get_logger().info(f"Exposure set to {value}")
 
+    def _apply_gamma(self, value: int):
+        if self._v4l2_ctl(f"gamma={value}"):
+            self.get_logger().info(f"Gamma set to {value}")
+
     def _on_param_change(self, params):
         for p in params:
             if p.name == "exposure" and p.type_ == Parameter.Type.INTEGER:
                 self._apply_exposure(p.value)
+            elif p.name == "gamma" and p.type_ == Parameter.Type.INTEGER:
+                self._apply_gamma(p.value)
         return SetParametersResult(successful=True)
 
     def _publish(self, buf):
