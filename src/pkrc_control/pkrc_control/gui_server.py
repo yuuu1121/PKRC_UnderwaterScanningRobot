@@ -14,6 +14,7 @@
 import argparse
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -356,13 +357,11 @@ class ProcManager:
         except Exception:
             return False
 
-    @staticmethod
-    def _proc_exists(node_name: str) -> bool:
-        """해당 조종 노드의 실행파일 프로세스가 실제로 있는지 (pgrep)."""
-        r = subprocess.run(
-            ['pgrep', '-f', f'lib/pkrc_control/{node_name}'],
-            capture_output=True)
-        return r.returncode == 0
+    @classmethod
+    def _proc_exists(cls, node_name: str) -> bool:
+        """해당 조종 노드의 실행파일 프로세스가 실제로 있는지.
+        pgrep -f 는 부분일치라 형제 노드를 오검출하므로 쓰지 않는다."""
+        return bool(cls._pids_of(node_name))
 
     def _present(self, key: str) -> bool:
         """어떤 경로로든 실제로 돌고 있는가 (표시·인터록·정지 판정용)."""
@@ -378,12 +377,41 @@ class ProcManager:
         if self._on_before_stop is not None:
             self._on_before_stop()      # 먼저 전 축 정지
             time.sleep(0.3)
-        # ros2 run 래퍼와 실제 노드가 별도 프로세스다 — 둘 다 잡는다.
-        subprocess.run(['pkill', '-f', f'lib/pkrc_control/{name}'],
-                       capture_output=True)
-        subprocess.run(['pkill', '-f', f'ros2 run pkrc_control {name}'],
-                       capture_output=True)
-        self._logger.info(f'외부에서 띄운 {name} 종료 (GUI 가 소유하지 않은 노드)')
+        # pkill -f 를 쓰면 안 된다: 전체 명령줄 부분일치라 teleop 패턴이
+        # wall_align 프로세스까지 잡는 것을 실측했다(모드 전환이 안 되던
+        # 원인). 실행파일 경로가 정확히 일치하는 PID 만 골라 죽인다.
+        killed = 0
+        for pid in self._pids_of(name):
+            try:
+                os.kill(pid, signal.SIGTERM)
+                killed += 1
+            except OSError:
+                pass
+        if killed:
+            self._logger.info(
+                f'외부에서 띄운 {name} 종료 {killed}개 '
+                f'(GUI 가 소유하지 않은 노드)')
+
+    @staticmethod
+    def _pids_of(node_name: str) -> list:
+        """해당 노드의 PID 목록. /proc/<pid>/cmdline 을 직접 읽어 실행파일
+        경로가 정확히 일치하는 토큰만 인정한다 — 부분일치로 형제 노드를
+        죽이거나 오검출하지 않기 위함."""
+        exe = 'lib/pkrc_control/' + node_name
+        out = []
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit():
+                continue
+            try:
+                with open('/proc/' + entry + '/cmdline', 'rb') as f:
+                    argv = f.read().split(b'\x00')
+            except OSError:
+                continue
+            for a in argv:
+                if a.decode('utf-8', 'replace').endswith(exe):
+                    out.append(int(entry))
+                    break
+        return out
 
     def status(self) -> dict:
         with self._lock:
