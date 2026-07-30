@@ -502,10 +502,17 @@ class _Handler(BaseHTTPRequestHandler):
         if path.startswith('/params') or path.startswith('/node'):
             self.server.node.get_logger().info(f'HTTP {path}')
 
-    def _send(self, code, ctype, body: bytes):
+    def _send(self, code, ctype, body: bytes, no_cache=False):
         self.send_response(code)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
+        if no_cache:
+            # gui.html 을 브라우저가 캐시하면 서버 코드를 고쳐도 옛 화면이
+            # 그대로 뜬다 — 이 세션에서 '수정했는데 안 된다' 의 실제 원인.
+            self.send_header('Cache-Control',
+                             'no-store, no-cache, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
         self.end_headers()
         self.wfile.write(body)
 
@@ -572,7 +579,8 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path in ('/', '/index.html'):
             try:
                 with open(node.html_path, 'rb') as f:
-                    self._send(200, 'text/html; charset=utf-8', f.read())
+                    self._send(200, 'text/html; charset=utf-8', f.read(),
+                               no_cache=True)
             except OSError as e:
                 self._send(500, 'text/plain; charset=utf-8',
                            f'gui.html 을 읽을 수 없음: {e}'.encode())

@@ -391,6 +391,17 @@
   // max_current_* 는 런타임에 오버라이드될 수 있다(예: 1.0A 캡 운용).
   // 서버가 활성 조종 노드에서 실제 값을 읽어 /state 에 실어 보내므로
   // 그것을 우선 쓰고, 조종 노드가 없어 null 이면 기본값으로 폴백한다.
+  // 서버가 /state.control_node 로 '실제로 살아있는 조종 노드' 이름을 준다.
+  // 브라우저가 스스로 추측하지 않고 이 값을 그대로 쓰는 것이 핵심이다 —
+  // 그래야 새로고침해도, 모드를 바꿔도 항상 실제 노드를 가리킨다.
+  //
+  // 선언이 반드시 poll() 보다 위에 있어야 한다. let 은 TDZ 가 있어서
+  // 선언 전에 대입하면 ReferenceError 로 poll() 전체가 죽고, 그러면
+  // refreshTune() 도 노드 상태 갱신도 전부 멈춘다(실측한 버그).
+  let serverControlNode = null;
+  // nodeState 도 poll() 이 대입하므로 같은 이유로 여기서 선언해야 한다.
+  let nodeState = {};
+
   const T_LIMITS_DEFAULT = [3.0, 3.0, 3.0, 3.0, 5.0, 5.0];
   let T_LIMITS = T_LIMITS_DEFAULT;
   const hist = {yaw: [], depth: []};
@@ -543,7 +554,6 @@
     teleop: 'keyboard_control_teleop',
     wall_align: 'keyboard_control_wall_align',
   };
-  let nodeState = {};
 
   function buildNodes() {
     const box = document.getElementById('nodes');
@@ -729,12 +739,6 @@
   // 노드마다 선언 집합이 다르고(teleop 약 40, wall_align 약 60),
   // read_only 로 표시된 물성값은 서버가 이미 걸러낸다.
   let tuneNode = null;
-
-  // 서버가 /state.control_node 로 "실제로 살아있는 조종 노드" 이름을 준다.
-  // nodeState(ProcManager 장부)만 보면 터미널에서 ros2 run 으로 띄운 노드를
-  // 놓쳐 게인 슬라이더가 뜨지 않는다. 서버 값을 우선 쓰고, 없을 때만 장부로
-  // 폴백한다(구버전 서버 대비).
-  let serverControlNode = null;
 
   function activeControlNode() {
     if (serverControlNode) return serverControlNode;
