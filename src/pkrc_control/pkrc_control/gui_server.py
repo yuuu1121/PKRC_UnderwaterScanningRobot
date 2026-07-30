@@ -179,10 +179,15 @@ def build_cmd(key: str, horiz: float = None, heave: float = None) -> list:
     if spec['group'] == 'control':
         h = DEFAULT_MAX_CURRENT_HORIZ if horiz is None else horiz
         v = DEFAULT_MAX_CURRENT_HEAVE if heave is None else heave
+        # 반드시 소수점을 붙여야 한다. 노드가 이 파라미터를 DOUBLE 로
+        # 선언하므로 '3' 을 주면 ROS 가 INTEGER 로 해석해
+        # InvalidParameterTypeException 으로 노드가 즉시 죽는다.
+        # JS 의 JSON.stringify(3.0) 은 '3' 이 되므로 브라우저에서 켤 때만
+        # 이 문제가 났다 — curl 로 '3.0' 을 쓰면 재현되지 않았다.
         cmd = cmd + [
-            '-p', f'max_current_surge:={h}',
-            '-p', f'max_current_sway:={h}',
-            '-p', f'max_current_heave:={v}',
+            '-p', 'max_current_surge:=%.4f' % float(h),
+            '-p', 'max_current_sway:=%.4f' % float(h),
+            '-p', 'max_current_heave:=%.4f' % float(v),
         ]
     return cmd
 
@@ -449,9 +454,16 @@ class ProcManager:
             cmd = build_cmd(key, horiz, heave)
 
             try:
+                # stdout/stderr 를 버리면 노드가 죽은 이유를 알 수 없다.
+                # /tmp 에 노드별 로그를 남겨 사인을 확인할 수 있게 한다.
+                logpath = f'/tmp/pkrc_node_{key}.log'
+                try:
+                    logf = open(logpath, 'w')
+                except OSError:
+                    logf = subprocess.DEVNULL
                 p = subprocess.Popen(
                     cmd,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    stdout=logf, stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
                     start_new_session=True)
             except (OSError, FileNotFoundError) as e:
@@ -637,13 +649,32 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(404, 'text/plain; charset=utf-8', b'not found')
 
     def _read_json(self):
-        """요청 본문을 JSON 으로 파싱. 실패하면 None."""
+        """요청 본문을 JSON 으로 파싱. 실패하면 None.
+
+        Content-Length 가 없는 요청(chunked transfer 등)도 처리한다 — 전에는
+        헤더가 없으면 즉시 None 을 돌려 400 을 냈고, 브라우저는 msg 없는
+        응답을 받아 alert(undefined) 를 띄웠다.
+        """
         try:
-            n = int(self.headers.get('Content-Length', 0))
-            if n <= 0:
-                return None
-            return json.loads(self.rfile.read(n))
-        except (ValueError, TypeError):
+            raw = self.headers.get('Content-Length')
+            if raw is not None:
+                n = int(raw)
+                if n <= 0:
+                    return None
+                return json.loads(self.rfile.read(n))
+            # chunked 또는 길이 미상 — 한 줄씩 모아 읽는다.
+            if self.headers.get('Transfer-Encoding', '').lower() == 'chunked':
+                chunks = []
+                while True:
+                    size = int(self.rfile.readline().strip() or b'0', 16)
+                    if size == 0:
+                        self.rfile.readline()      # 트레일러 CRLF
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.readline()
+                return json.loads(b''.join(chunks))
+            return None
+        except (ValueError, TypeError, OSError):
             return None
 
     def do_POST(self):
@@ -652,6 +683,7 @@ class _Handler(BaseHTTPRequestHandler):
         if body is None:
             self._send(400, 'application/json',
                        json.dumps({'ok': False,
+                                   'msg': 'JSON 본문을 읽을 수 없습니다',
                                    'error': 'JSON 본문이 필요합니다'}).encode())
             return
 
@@ -660,11 +692,13 @@ class _Handler(BaseHTTPRequestHandler):
             if not key:
                 self._send(400, 'application/json',
                            json.dumps({'ok': False,
+                                       'msg': 'key 가 비었습니다',
                                        'error': 'key 가 비었습니다'}).encode())
                 return
             if key not in VALID_KEYS:
                 self._send(400, 'application/json',
                            json.dumps({'ok': False,
+                                       'msg': f'알 수 없는 키: {key!r}',
                                        'error': f'알 수 없는 키: {key!r}'}).encode())
                 return
             node.publish_key(key)

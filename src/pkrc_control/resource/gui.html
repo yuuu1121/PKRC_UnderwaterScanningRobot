@@ -691,7 +691,14 @@
     if (!ledDragging) ledEl.value = v;   // 조작 중엔 되돌리지 않는다
   }
 
+  let clickSeq = 0;
+
   async function toggleNode(key) {
+    // 진단: 클릭이 사용자 조작인지 자동 발생인지 구분한다.
+    dbg('click#' + (++clickSeq) + ':' + key +
+        ' on=' + !((key==='teleop'||key==='wall_align')
+                   ? CONTROL_NODE_NAMES[key] === serverControlNode
+                   : !!nodeState[key]));
     // 누르면 항상 서버로 보낸다 — curl 로 직접 호출할 때와 같은 동작.
     // 중복 기동 방지는 서버의 _present() 가 이미 하므로 브라우저에서
     // 연타를 막을 필요가 없다(막으면 정당한 두 번째 클릭도 삼킨다).
