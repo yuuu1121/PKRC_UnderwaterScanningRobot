@@ -513,9 +513,13 @@
       fs.className = 'nodegrp';
       fs.innerHTML = `<legend>${g.title}</legend>`;
       if (g.currentLimit) {
+        // 전류 한계는 축별로 둘 — heave 는 부력을 이겨야 해 더 크다.
+        // 물 밖 벤치에서 시험할 때는 두 값을 낮춰서 켠다.
         fs.innerHTML +=
-          `<label>전류 한계 <input type="number" id="max-current" ` +
-          `min="0.1" max="5.0" step="0.1" value="1.0"> A</label> `;
+          `<label>수평 <input type="number" id="max-current-horiz" ` +
+          `min="0.1" max="5.0" step="0.1" value="3.0"> A</label> ` +
+          `<label>상하 <input type="number" id="max-current-heave" ` +
+          `min="0.1" max="5.0" step="0.1" value="5.0"> A</label> `;
       }
       if (g.ledSlider) {
         // LED 는 파라미터가 아니라 lumen/brightness 토픽이라 전용 경로다.
@@ -594,10 +598,11 @@
     try {
       const body = {key: key, on: !nodeState[key]};
       // control 그룹을 켤 때만 전류 한계를 함께 보낸다.
-      const capInput = document.getElementById('max-current');
-      if (capInput && !nodeState[key] && NODE_LABELS[key] &&
-          (key === 'teleop' || key === 'wall_align')) {
-        body.max_current = parseFloat(capInput.value);
+      if (!nodeState[key] && (key === 'teleop' || key === 'wall_align')) {
+        const h = document.getElementById('max-current-horiz');
+        const v = document.getElementById('max-current-heave');
+        if (h) body.max_current_horiz = parseFloat(h.value);
+        if (v) body.max_current_heave = parseFloat(v.value);
       }
       const r = await (await fetch('/node', {
         method: 'POST',

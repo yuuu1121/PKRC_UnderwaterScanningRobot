@@ -137,11 +137,12 @@ NODE_SPECS = {
     },
 }
 
-# control 그룹 토글의 기본 전류 한계 [A]. 드라이 벤치(실험실 테스트대) 작업
-# 중엔 낮은 값이 안전 기본값이다 — 실제 수조/풀에서 운용할 때만 GUI 에서
-# 값을 올린다. teleop/wall_align 기본값(3.0/3.0/5.0A)로 바로 켜면 벤치에서
-# 전 출력 추력이 나갈 수 있어 위험하다.
-DEFAULT_MAX_CURRENT = 1.0
+# control 그룹 토글의 기본 전류 한계 [A]. 축 특성이 달라 둘로 나눈다 —
+# heave 는 부력을 이겨야 하므로 수평축보다 큰 전류가 필요하다.
+# 이 값은 노드 자체 기본값(keyboard_control_teleop.py:417-419)과 같은
+# 전 출력이다. 물 밖 벤치에서 시험할 때는 GUI 에서 낮춰서 켤 것.
+DEFAULT_MAX_CURRENT_HORIZ = 3.0   # surge / sway
+DEFAULT_MAX_CURRENT_HEAVE = 5.0   # heave (상하)
 # GUI 가 허용하는 전류 한계 범위 [A] — 이 밖의 값(오타 등)은 거부한다.
 MAX_CURRENT_RANGE = (0.1, 5.0)
 
@@ -166,17 +167,21 @@ def _is_number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def build_cmd(key: str, max_current: float = None) -> list:
+def build_cmd(key: str, horiz: float = None, heave: float = None) -> list:
     """NODE_SPECS[key]['cmd'] 에 control 그룹 전류 한계 오버라이드를 얹은
-    argv. NODE_SPECS 는 mutate 하지 않는다 — 새 리스트를 반환한다."""
+    argv. NODE_SPECS 는 mutate 하지 않는다 — 새 리스트를 반환한다.
+
+    horiz = surge/sway 공통, heave = 상하. 축 특성이 달라 따로 받는다.
+    """
     spec = NODE_SPECS[key]
     cmd = spec['cmd']
     if spec['group'] == 'control':
-        cap = DEFAULT_MAX_CURRENT if max_current is None else max_current
+        h = DEFAULT_MAX_CURRENT_HORIZ if horiz is None else horiz
+        v = DEFAULT_MAX_CURRENT_HEAVE if heave is None else heave
         cmd = cmd + [
-            '-p', f'max_current_surge:={cap}',
-            '-p', f'max_current_sway:={cap}',
-            '-p', f'max_current_heave:={cap}',
+            '-p', f'max_current_surge:={h}',
+            '-p', f'max_current_sway:={h}',
+            '-p', f'max_current_heave:={v}',
         ]
     return cmd
 
@@ -332,7 +337,7 @@ class ProcManager:
                 self._procs.pop(k, None)
             return {k: self._alive(k) for k in NODE_SPECS}
 
-    def start(self, key: str, max_current: float = None):
+    def start(self, key: str, horiz: float = None, heave: float = None):
         spec = NODE_SPECS.get(key)
         if spec is None:
             return False, f'알 수 없는 노드: {key}'
@@ -350,7 +355,7 @@ class ProcManager:
                         f'({spec["group"]}) 이라 동시 실행 불가')
                     self._stop_locked(sib)
 
-            cmd = build_cmd(key, max_current)
+            cmd = build_cmd(key, horiz, heave)
 
             try:
                 p = subprocess.Popen(
@@ -554,26 +559,34 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == '/node':
             key = body.get('key', '')
             on = bool(body.get('on'))
-            max_current = body.get('max_current')
-            if max_current is not None:
+            # 전류 한계는 축별로 둘. horiz = surge/sway, heave = 상하.
+            # 두 필드를 같은 규칙(숫자 + 범위)으로 검증한다.
+            caps = {}
+            for field in ('max_current_horiz', 'max_current_heave'):
+                v = body.get(field)
+                if v is None:
+                    caps[field] = None
+                    continue
                 # 타입이 틀리면(문자열 등) 범위 비교(<=) 자체가 예외를
                 # 던지므로 범위 검사보다 먼저 확인한다.
-                if not _is_number(max_current):
+                if not _is_number(v):
                     self._send(400, 'application/json', json.dumps({
                         'ok': False,
-                        'msg': 'max_current 는 숫자여야 합니다',
+                        'msg': f'{field} 는 숫자여야 합니다',
                         'nodes': node.procs.status(),
                     }).encode())
                     return
                 lo, hi = MAX_CURRENT_RANGE
-                if not (lo <= max_current <= hi):
+                if not (lo <= v <= hi):
                     self._send(400, 'application/json', json.dumps({
                         'ok': False,
-                        'msg': f'max_current 는 {lo}~{hi}A 범위여야 합니다',
+                        'msg': f'{field} 는 {lo}~{hi}A 범위여야 합니다',
                         'nodes': node.procs.status(),
                     }).encode())
                     return
-            ok, msg = (node.procs.start(key, max_current) if on
+                caps[field] = v
+            ok, msg = (node.procs.start(key, caps['max_current_horiz'],
+                                        caps['max_current_heave']) if on
                        else node.procs.stop(key))
             self._send(200, 'application/json', json.dumps({
                 'ok': ok, 'msg': msg, 'nodes': node.procs.status(),
@@ -1118,15 +1131,17 @@ def _selftest():
     # build_cmd: control 그룹만 전류 한계 오버라이드가 붙는지, NODE_SPECS
     # 원본은 mutate 되지 않는지.
     before = list(NODE_SPECS['teleop']['cmd'])
-    cmd = build_cmd('teleop', max_current=1.0)
+    cmd = build_cmd('teleop', horiz=1.0, heave=2.0)
     assert 'max_current_surge:=1.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
     assert 'max_current_sway:=1.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
-    assert 'max_current_heave:=1.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
+    assert 'max_current_heave:=2.0' in ' '.join(cmd), 'teleop 전류 오버라이드 누락'
     assert NODE_SPECS['teleop']['cmd'] == before, 'NODE_SPECS 가 mutate 됨'
     cmd_default = build_cmd('teleop')
-    assert f'max_current_surge:={DEFAULT_MAX_CURRENT}' in ' '.join(cmd_default), \
-        '기본 전류 한계 누락'
-    cmd_sensor = build_cmd('sonar', max_current=1.0)
+    assert f'max_current_surge:={DEFAULT_MAX_CURRENT_HORIZ}' in ' '.join(cmd_default), \
+        '기본 수평 전류 한계 누락'
+    assert f'max_current_heave:={DEFAULT_MAX_CURRENT_HEAVE}' in ' '.join(cmd_default), \
+        '기본 상하 전류 한계 누락'
+    cmd_sensor = build_cmd('sonar', horiz=1.0, heave=2.0)
     assert 'max_current' not in ' '.join(cmd_sensor), \
         '비-control 노드에 전류 오버라이드가 붙음'
     print('selftest: build_cmd OK')

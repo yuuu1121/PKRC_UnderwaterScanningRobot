@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from pkrc_control.gui_server import (
     mjpeg_frame, BOUNDARY, FrameStore, KeyWatchdog, MOTION_KEYS,
     TopicCache, NODE_SPECS, group_siblings, CONTROL_NODE_NAMES,
-    build_cmd, DEFAULT_MAX_CURRENT, PRESET_DIR, GuiServer, _is_number)
+    build_cmd, DEFAULT_MAX_CURRENT_HORIZ, DEFAULT_MAX_CURRENT_HEAVE,
+    PRESET_DIR, GuiServer, _is_number)
 
 
 def test_mjpeg_frame_structure():
@@ -208,22 +209,23 @@ def test_control_node_names_match_source():
 
 def test_build_cmd_control_gets_current_override():
     """control 노드는 요청한 전류 한계 3종이 모두 argv 에 붙는다."""
-    cmd = build_cmd('teleop', max_current=2.5)
+    cmd = build_cmd('teleop', horiz=2.5, heave=4.5)
     joined = ' '.join(cmd)
     assert 'max_current_surge:=2.5' in joined
     assert 'max_current_sway:=2.5' in joined
-    assert 'max_current_heave:=2.5' in joined
+    assert 'max_current_heave:=4.5' in joined   # 상하는 따로 받는다
 
 
 def test_build_cmd_default_current():
-    """max_current 를 안 주면 DEFAULT_MAX_CURRENT 가 쓰인다."""
+    """값을 안 주면 축별 기본값(수평 3.0 / 상하 5.0)이 쓰인다."""
     joined = ' '.join(build_cmd('wall_align'))
-    assert f'max_current_surge:={DEFAULT_MAX_CURRENT}' in joined
+    assert f'max_current_surge:={DEFAULT_MAX_CURRENT_HORIZ}' in joined
+    assert f'max_current_heave:={DEFAULT_MAX_CURRENT_HEAVE}' in joined
 
 
 def test_build_cmd_non_control_no_override():
     """조종이 아닌 노드는 전류 오버라이드가 붙지 않는다."""
-    joined = ' '.join(build_cmd('sonar', max_current=2.5))
+    joined = ' '.join(build_cmd('sonar', horiz=2.5, heave=4.5))
     assert 'max_current' not in joined
 
 
@@ -231,7 +233,7 @@ def test_build_cmd_does_not_mutate_node_specs():
     """NODE_SPECS 는 템플릿이다 — build_cmd 호출이 원본을 바꾸면 다음
     시작에 이전 호출의 전류값이 새어 들어간다."""
     before = list(NODE_SPECS['teleop']['cmd'])
-    build_cmd('teleop', max_current=3.3)
+    build_cmd('teleop', horiz=3.3, heave=4.4)
     assert NODE_SPECS['teleop']['cmd'] == before
 
 
