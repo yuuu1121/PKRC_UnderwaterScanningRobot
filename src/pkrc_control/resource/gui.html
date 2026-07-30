@@ -658,10 +658,16 @@
   // 한다). 한 번에 하나만 돌게 잠근다.
   let tuneBusy = false;
 
+  // 실패로 tuneNode 를 null 로 되돌린 상태와 "원래 노드가 없는" 상태를
+  // 구분한다. 둘 다 null 이면 target===tuneNode 로 조기 반환되어, 노드를
+  // 끈 뒤에도 이전 실패 문구가 화면에 남는다(실측).
+  let tuneFailed = false;
+
   async function refreshTune() {
     if (tuneBusy) return;
     const target = activeControlNode();
-    if (target === tuneNode) return;      // 변화 없음
+    // 노드가 사라졌는데 직전에 실패 상태였다면 한 번 더 돌려 문구를 정리한다
+    if (target === tuneNode && !(target === null && tuneFailed)) return;
     if (target && Date.now() < tuneRetryAt) return;   // 재시도 대기 중
     tuneBusy = true;
     try {
@@ -678,6 +684,10 @@
     sl.innerHTML = '';
     if (!target) {
       st.textContent = '조종 노드를 켜면 게인 슬라이더가 나타납니다.';
+      st.classList.remove('msg-err');   // 이전 실패의 빨간 글씨를 지운다
+      pmsg.textContent = '';            // 프리셋 쪽 안내도 함께 정리
+      pmsg.classList.remove('msg-err');
+      tuneFailed = false;
       return;
     }
     st.textContent = `${target} 파라미터를 읽는 중…`;
@@ -687,6 +697,7 @@
         '/params?node=' + encodeURIComponent(target))).json();
     } catch (e) {
       tuneNode = null;   // 다음 폴링에서 재시도
+      tuneFailed = true;
       tuneRetryAt = Date.now() + 1000;
       return;
     }
@@ -698,9 +709,11 @@
       st.textContent = r.msg + ' (재시도 중…)';
       st.classList.add('msg-err');
       tuneNode = null;
+      tuneFailed = true;
       tuneRetryAt = Date.now() + 1000;
       return;
     }
+    tuneFailed = false;
     st.classList.remove('msg-err');
     st.textContent = `${target} — ${r.params.length}개 파라미터`;
 
