@@ -319,23 +319,62 @@ class ProcManager:
     오작동하므로, 조합 자체를 만들 수 없게 한다.
     """
 
-    def __init__(self, logger, on_before_stop=None):
+    def __init__(self, logger, on_before_stop=None, live_nodes=None):
         self._logger = logger
         self._procs = {}          # key → Popen
         self._lock = threading.Lock()
         # control 그룹을 내리기 전에 정지 키를 보내기 위한 훅
         self._on_before_stop = on_before_stop
+        # 내가 띄우지 않은 노드(터미널의 ros2 run 등)도 알아야 한다.
+        # 모르면 끄지도 못하고 인터록으로 교체하지도 못해, 같은 CAN 버스를
+        # 쓰는 조종 노드가 방치된다. () -> set(노드 이름) 콜백.
+        self._live_nodes = live_nodes
 
     def _alive(self, key: str) -> bool:
         p = self._procs.get(key)
         return p is not None and p.poll() is None
+
+    def _external(self, key: str) -> bool:
+        """내가 띄우지 않았지만 실제로 돌고 있는 노드인가."""
+        if self._alive(key) or self._live_nodes is None:
+            return False
+        name = CONTROL_NODE_NAMES.get(key)
+        if name is None:
+            return False          # 조종 노드만 이름으로 조회할 수 있다
+        try:
+            return name in self._live_nodes()
+        except Exception:
+            return False
+
+    def _present(self, key: str) -> bool:
+        """어떤 경로로든 실제로 돌고 있는가 (표시·인터록·정지 판정용)."""
+        return self._alive(key) or self._external(key)
+
+    def _kill_external(self, key: str):
+        """외부에서 띄운 조종 노드를 프로세스 이름으로 찾아 정리한다.
+        ProcManager 는 Popen 핸들이 없으므로 pkill 에 해당하는 일을 직접 한다.
+        같은 CAN 버스를 두 노드가 잡으면 로봇이 오작동하므로 방치할 수 없다."""
+        name = CONTROL_NODE_NAMES.get(key)
+        if name is None:
+            return
+        if self._on_before_stop is not None:
+            self._on_before_stop()      # 먼저 전 축 정지
+            time.sleep(0.3)
+        # ros2 run 래퍼와 실제 노드가 별도 프로세스다 — 둘 다 잡는다.
+        subprocess.run(['pkill', '-f', f'lib/pkrc_control/{name}'],
+                       capture_output=True)
+        subprocess.run(['pkill', '-f', f'ros2 run pkrc_control {name}'],
+                       capture_output=True)
+        self._logger.info(f'외부에서 띄운 {name} 종료 (GUI 가 소유하지 않은 노드)')
 
     def status(self) -> dict:
         with self._lock:
             # 죽은 프로세스 정리
             for k in [k for k in self._procs if not self._alive(k)]:
                 self._procs.pop(k, None)
-            return {k: self._alive(k) for k in NODE_SPECS}
+            # 외부 기동 노드도 '켜짐' 으로 보고한다 — 실제로 돌고 있는데
+            # 버튼이 꺼져 보이면 눌러서 중복 기동을 시도하게 된다.
+            return {k: self._present(k) for k in NODE_SPECS}
 
     def start(self, key: str, horiz: float = None, heave: float = None):
         spec = NODE_SPECS.get(key)
@@ -343,11 +382,17 @@ class ProcManager:
             return False, f'알 수 없는 노드: {key}'
 
         with self._lock:
-            if self._alive(key):
+            if self._present(key):
                 return True, f'{spec["label"]} 이미 실행 중'
 
             # 상호배타: 같은 그룹의 형제를 먼저 내린다
             for sib in group_siblings(key):
+                if self._external(sib):
+                    self._logger.info(
+                        f'{NODE_SPECS[sib]["label"]} (외부 기동) 종료 — '
+                        f'{spec["label"]} 과 같은 그룹({spec["group"]})')
+                    self._kill_external(sib)
+                    continue
                 if self._alive(sib):
                     self._logger.info(
                         f'{NODE_SPECS[sib]["label"]} 종료 — '
@@ -403,6 +448,11 @@ class ProcManager:
             return False, f'알 수 없는 노드: {key}'
         with self._lock:
             if not self._alive(key):
+                if self._external(key):
+                    # 내가 띄운 게 아니어도 끈다 — CAN 버스를 공유하는
+                    # 조종 노드를 방치하면 다음 기동과 충돌한다.
+                    self._kill_external(key)
+                    return True, f'{spec["label"]} 종료 (외부 기동)'
                 return True, f'{spec["label"]} 실행 중 아님'
             self._stop_locked(key)
             self._logger.info(f'{spec["label"]} 종료')
@@ -718,7 +768,8 @@ class GuiServer(Node):
 
         # ── 노드 프로세스 관리 ─────────────────────────────────────────
         self.procs = ProcManager(self.get_logger(),
-                                 on_before_stop=self._emit_stop)
+                                 on_before_stop=self._emit_stop,
+                                 live_nodes=lambda: set(self.get_node_names()))
         # 파라미터 서비스 클라이언트 캐시 (노드명 → {서비스명: client})
         self._param_clients = {}
         # get_max_current() 결과 캐시 (노드명 → (조회 시각, 결과)), 2초 TTL
