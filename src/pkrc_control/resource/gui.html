@@ -692,12 +692,24 @@
   }
 
   async function toggleNode(key) {
+    // 누르면 항상 서버로 보낸다 — curl 로 직접 호출할 때와 같은 동작.
+    // 중복 기동 방지는 서버의 _present() 가 이미 하므로 브라우저에서
+    // 연타를 막을 필요가 없다(막으면 정당한 두 번째 클릭도 삼킨다).
     const btn = document.getElementById('nb-' + key);
     btn.disabled = true;
     try {
-      const body = {key: key, on: !nodeState[key]};
+      // '켜짐' 판정을 화면 표시와 똑같은 근거로 한다. 조종 그룹은
+      // control_node(실제로 살아있는 노드)가 기준이고 센서는 nodeState 다.
+      // 전에는 항상 nodeState 만 봤는데, 조종 노드가 살아있어도
+      // nodeState[key] 가 false 인 순간이 있어 '켜기' 를 다시 보냈고
+      // 그때마다 노드가 재기동됐다(로그에 시작 3연속, 종료 없음).
+      const isControl = (key === 'teleop' || key === 'wall_align');
+      const isOn = isControl
+        ? CONTROL_NODE_NAMES[key] === serverControlNode
+        : !!nodeState[key];
+      const body = {key: key, on: !isOn};
       // control 그룹을 켤 때만 전류 한계를 함께 보낸다.
-      if (!nodeState[key] && (key === 'teleop' || key === 'wall_align')) {
+      if (!isOn && isControl) {
         const h = document.getElementById('max-current-horiz');
         const v = document.getElementById('max-current-heave');
         if (h) body.max_current_horiz = parseFloat(h.value);
@@ -710,6 +722,9 @@
       })).json();
       if (!r.ok) alert(r.msg);
       nodeState = r.nodes || nodeState;
+      // 모드를 바꿨으니 이전 노드의 슬라이더는 무효다. tuneNode 와 재시도
+      // 대기를 비워 새 노드를 즉시 조회하게 한다.
+      if (isControl) { tuneNode = null; tuneRetryAt = 0; }
       paintNodes();
       refreshTune();
     } finally {
