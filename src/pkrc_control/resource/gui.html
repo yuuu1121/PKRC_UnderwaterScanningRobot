@@ -759,7 +759,14 @@
 
   async function presetCall(action, name) {
     const target = activeControlNode();
-    if (!target) { pmsg.textContent = '조종 노드를 먼저 켜세요'; return; }
+    // list 는 저장된 파일 이름만 읽으므로 조종 노드가 없어도 된다.
+    // save/load 만 대상 노드가 필요하다 — 페이지 로드 직후에는 poll() 의
+    // 첫 응답이 아직 안 와서 target 이 null 이므로, 여기서 노드를 요구하면
+    // 노드가 켜져 있어도 '먼저 켜세요' 가 뜬다.
+    if (!target && action !== 'list') {
+      pmsg.textContent = '조종 노드를 먼저 켜세요';
+      return;
+    }
     const r = await (await fetch('/preset', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -787,7 +794,9 @@
     if (!n) { pmsg.textContent = '불러올 프리셋이 없습니다'; return; }
     presetCall('load', n);
   });
-  presetCall('list', '');
+  // 초기 프리셋 목록은 poll() 첫 응답 뒤에 부른다 — 그때 serverControlNode
+  // 가 채워져 있어 save/load 대상 노드도 정확히 잡힌다.
+  setTimeout(() => presetCall('list', ''), 300);
 </script>
 </body>
 </html>
