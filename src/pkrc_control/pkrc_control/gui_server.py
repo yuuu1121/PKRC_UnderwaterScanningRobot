@@ -671,6 +671,14 @@ class _Handler(BaseHTTPRequestHandler):
                 'ok': ok, 'msg': msg, 'nodes': node.procs.status(),
             }).encode())
 
+        elif self.path == '/clienterr':
+            # 브라우저 JS 오류를 서버 로그로 남긴다 — 원격 브라우저의
+            # 콘솔을 볼 수 없어 화면 문제를 진단하지 못하는 일을 막는다.
+            node.get_logger().error(
+                f'브라우저 오류: {str(body.get("msg", ""))[:300]}')
+            self._send(200, 'application/json',
+                       json.dumps({'ok': True}).encode())
+
         elif self.path == '/led':
             # Lumen LED 밝기. 노드가 자체적으로 0~1 클램프를 하지만
             # (lumen_node.py:141) 범위 밖 값을 그대로 흘리면 사용자가
