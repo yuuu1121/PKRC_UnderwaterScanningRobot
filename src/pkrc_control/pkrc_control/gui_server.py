@@ -14,6 +14,7 @@
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -37,6 +38,13 @@ from pkrc_control.live_tuning import _terminate
 
 # MJPEG multipart 경계 문자열. 브라우저가 프레임 구분에 쓴다.
 BOUNDARY = 'pkrcframe'
+
+# 브라우저로 밀어낼 최대 프레임률. 카메라는 약 27fps 로 발행하지만
+# 프레임이 약 192KB 라 그대로 흘리면 42Mbps 가 되고, 링크가 포화되면
+# 영상이 밀리는 것은 물론 브라우저의 조종 fetch 까지 늦어진다.
+# 12fps ≈ 18Mbps — 관제 화면으로 충분히 부드럽고 여유가 생긴다.
+# 화질이 아니라 프레임 수만 줄이므로 레이저 관측에는 영향이 없다.
+STREAM_MAX_FPS = 12.0
 
 # 누르고 있는 동안만 유효한 이동 키. 이 키를 보낸 뒤 브라우저가 조용해지면
 # 통신이 끊긴 것으로 보고 강제 정지시킨다.
@@ -423,6 +431,14 @@ class _Handler(BaseHTTPRequestHandler):
         이 응답은 스레드 하나를 계속 붙잡는다 — 그래서 서버가
         ThreadingHTTPServer 여야 한다. Content-Length 를 줄 수 없으므로
         HTTP/1.0 으로 응답해 연결 종료로 끝을 알린다.
+
+        지연 대책: write() 는 프레임(약 192KB)을 다 보낼 때까지 블로킹한다.
+        그 사이 카메라는 계속 새 프레임을 덮어쓰므로, 전송이 끝난 뒤 그냥
+        다음 루프로 가면 브라우저는 항상 "전송이 끝난 시점"의 영상을 본다.
+        링크가 느릴수록 이 뒤처짐이 쌓여 눈에 보이는 딜레이가 된다.
+        그래서 (1) 전송 직후 최신 프레임으로 건너뛰고(밀린 것은 버린다),
+        (2) 목표 fps 로 상한을 둬 대역폭이 링크를 포화시키지 않게 한다.
+        포화되면 브라우저 쪽에서 조종 fetch 도 함께 늦어진다.
         """
         self.protocol_version = 'HTTP/1.0'
         self.send_response(200)
@@ -432,18 +448,38 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
 
+        # 소켓 송신 버퍼가 크면 write() 가 커널에만 쌓아두고 즉시 반환해,
+        # 실제로는 오래된 프레임이 버퍼에 줄 서 있게 된다(딜레이의 원인).
+        # 버퍼를 프레임 2장 정도로 줄이면 write() 가 링크 속도를 그대로
+        # 반영해 블로킹하므로, 아래 skip-to-latest 가 제대로 동작한다.
+        try:
+            self.connection.setsockopt(
+                socket.SOL_SOCKET, socket.SO_SNDBUF, 512 * 1024)
+        except OSError:
+            pass
+
+        interval = 1.0 / STREAM_MAX_FPS
         last_stamp = 0.0
+        next_send = 0.0
         try:
             while True:
+                now = time.time()
+                if now < next_send:
+                    time.sleep(min(0.005, next_send - now))
+                    continue
                 data, stamp = node.get_frame()
-                if data is not None and stamp != last_stamp:
-                    self.wfile.write(mjpeg_frame(data))
-                    self.wfile.flush()
-                    last_stamp = stamp
-                else:
-                    # 새 프레임 대기 — 30fps 주기보다 촘촘히 폴링
-                    time.sleep(0.005)
-        except (BrokenPipeError, ConnectionResetError):
+                if data is None or stamp == last_stamp:
+                    time.sleep(0.005)      # 아직 새 프레임이 없다
+                    continue
+                self.wfile.write(mjpeg_frame(data))
+                self.wfile.flush()
+                last_stamp = stamp
+                # 전송에 걸린 시간을 반영해 다음 전송 시각을 잡는다.
+                # 전송이 interval 보다 오래 걸렸으면 즉시 다음 프레임으로
+                # 가되, 그때 get_frame() 이 최신을 주므로 밀린 프레임은
+                # 자동으로 버려진다.
+                next_send = max(time.time(), now + interval)
+        except (BrokenPipeError, ConnectionResetError, OSError):
             # 브라우저가 탭을 닫거나 새로고침한 정상 종료
             pass
 
