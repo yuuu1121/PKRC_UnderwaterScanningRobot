@@ -580,9 +580,14 @@
     return null;
   }
 
+  // 재시도는 1초에 한 번으로 제한한다 — poll() 이 10Hz 라 그대로 두면
+  // 노드가 준비되기 전 2초간 서버에 20번 헛되이 물어본다.
+  let tuneRetryAt = 0;
+
   async function refreshTune() {
     const target = activeControlNode();
     if (target === tuneNode) return;      // 변화 없음
+    if (target && Date.now() < tuneRetryAt) return;   // 재시도 대기 중
     tuneNode = target;
     const sl = document.getElementById('sliders');
     const st = document.getElementById('tune-status');
@@ -592,9 +597,26 @@
       return;
     }
     st.textContent = `${target} 파라미터를 읽는 중…`;
-    const r = await (await fetch(
-      '/params?node=' + encodeURIComponent(target))).json();
-    if (!r.ok) { st.textContent = r.msg; st.classList.add('msg-err'); return; }
+    let r;
+    try {
+      r = await (await fetch(
+        '/params?node=' + encodeURIComponent(target))).json();
+    } catch (e) {
+      tuneNode = null;   // 다음 폴링에서 재시도
+      tuneRetryAt = Date.now() + 1000;
+      return;
+    }
+    if (!r.ok) {
+      // 노드가 뜬 직후에는 파라미터 서비스가 아직 안 올라와 실패한다
+      // (실측 ~2초). tuneNode 를 되돌려 다음 폴링(0.1초 후)에 재시도하게
+      // 한다 — 안 그러면 target===tuneNode 로 조기 반환해 영구히 에러가
+      // 남는다.
+      st.textContent = r.msg + ' (재시도 중…)';
+      st.classList.add('msg-err');
+      tuneNode = null;
+      tuneRetryAt = Date.now() + 1000;
+      return;
+    }
     st.classList.remove('msg-err');
     st.textContent = `${target} — ${r.params.length}개 파라미터`;
 
