@@ -42,6 +42,7 @@
         <button data-key="t">T 수심</button>
         <button data-key="c">C 벽정렬</button>
       </div>
+      <div class="hint">키보드로도 조종 가능 (↑↓←→ A D W S R T C X)</div>
     </div>
   </section>
 
@@ -140,7 +141,10 @@
                 border: 1px solid #444; border-radius: 4px;
                 touch-action: none; }
   #pad button:active { background: #06c; border-color: var(--accent); }
+  /* 물리 키보드로 눌렀을 때도 마우스와 같게 보이도록 */
+  #pad button.kbd { background: #06c; border-color: var(--accent); }
   #pad button.stop { background: #833; border-color: #a44; }
+  #pad .hint { color: var(--dim); font-size: 10px; text-align: center; }
 
   /* ── 노드 토글 ── */
   #nodes { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
@@ -276,6 +280,71 @@
     if (document.hidden) stopHold();
   });
   window.addEventListener('blur', stopHold);
+
+  // ── 물리 키보드 입력 ────────────────────────────────────────────
+  // 원래 터미널에서 키보드로 조종하던 장비라 같은 키를 그대로 쓴다.
+  // 버튼과 동일 경로(sendKey/startHold)를 지나므로 watchdog 보호도 같다.
+  const KEYMAP = {
+    ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
+    a: 'a', d: 'd', w: 'w', s: 's', r: 'r', t: 't', c: 'c', x: 'x',
+  };
+  // 누르고 있어야 하는 키(방향·회전)와 한 번만 보내는 키를 구분한다.
+  // 버튼의 data-hold 와 같은 구분이다.
+  const HOLD_KEYS = new Set(['UP', 'DOWN', 'LEFT', 'RIGHT', 'a', 'd']);
+  let heldKey = null;
+
+  function keyOf(e) {
+    // 화살표는 e.key 그대로, 문자는 소문자로 정규화(Shift 눌러도 동작).
+    return KEYMAP[e.key] || KEYMAP[e.key.toLowerCase()] || null;
+  }
+
+  document.addEventListener('keydown', e => {
+    // 입력창(프리셋 이름·전류 한계·슬라이더)에 타이핑 중이면 조종하지 않는다.
+    const t = e.target.tagName;
+    if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;   // 브라우저 단축키 보존
+
+    const key = keyOf(e);
+    if (!key) return;
+    e.preventDefault();          // 화살표로 페이지가 스크롤되지 않게
+
+    if (HOLD_KEYS.has(key)) {
+      // OS 자동반복이 keydown 을 연달아 쏘지만 startHold 가 이미 20Hz 로
+      // 보내고 있으므로 같은 키의 반복은 무시한다.
+      if (e.repeat || heldKey === key) return;
+      heldKey = key;
+      startHold(key);
+      highlight(key, true);
+    } else {
+      sendKey(key);              // w/s/r/t/c/x 는 1회성
+      highlight(key, true);
+      setTimeout(() => highlight(key, false), 120);
+    }
+  });
+
+  document.addEventListener('keyup', e => {
+    const key = keyOf(e);
+    if (!key) return;
+    if (HOLD_KEYS.has(key) && heldKey === key) {
+      heldKey = null;
+      stopHold();
+      highlight(key, false);
+    }
+  });
+
+  // 키를 누른 채 탭을 벗어나면 keyup 을 못 받는다 → 여기서도 확실히 멈춘다.
+  // (stopHold 는 위의 blur 핸들러가 이미 호출한다)
+  window.addEventListener('blur', () => {
+    heldKey = null;
+    document.querySelectorAll('#pad button.kbd')
+            .forEach(b => b.classList.remove('kbd'));
+  });
+
+  // 어떤 키가 먹었는지 버튼에 표시 — 눌렀는지 아닌지 알 수 있어야 한다.
+  function highlight(key, on) {
+    const b = document.querySelector(`#pad button[data-key="${key}"]`);
+    if (b) b.classList.toggle('kbd', on);
+  }
 
   // ── 상태 폴링 (10Hz) ────────────────────────────────────────────
   // WebSocket 을 쓰지 않는 이유: 10Hz 폴링에 과하고 의존성이 늘어난다.
@@ -583,11 +652,26 @@
   // 재시도는 1초에 한 번으로 제한한다 — poll() 이 10Hz 라 그대로 두면
   // 노드가 준비되기 전 2초간 서버에 20번 헛되이 물어본다.
   let tuneRetryAt = 0;
+  // poll() 이 10Hz 로 refreshTune() 을 await 없이 부른다. async 함수라
+  // fetch 를 기다리는 동안 다음 호출이 겹쳐 들어와, 서로 tuneNode 를
+  // 덮어쓰며 경쟁한다(슬라이더를 만드는 중에 다른 호출이 지워버리기도
+  // 한다). 한 번에 하나만 돌게 잠근다.
+  let tuneBusy = false;
 
   async function refreshTune() {
+    if (tuneBusy) return;
     const target = activeControlNode();
     if (target === tuneNode) return;      // 변화 없음
     if (target && Date.now() < tuneRetryAt) return;   // 재시도 대기 중
+    tuneBusy = true;
+    try {
+      await _refreshTuneInner(target);
+    } finally {
+      tuneBusy = false;
+    }
+  }
+
+  async function _refreshTuneInner(target) {
     tuneNode = target;
     const sl = document.getElementById('sliders');
     const st = document.getElementById('tune-status');
