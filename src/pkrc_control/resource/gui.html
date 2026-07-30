@@ -759,14 +759,28 @@
   // 실패로 tuneNode 를 null 로 되돌린 상태와 "원래 노드가 없는" 상태를
   // 구분한다. 둘 다 null 이면 target===tuneNode 로 조기 반환되어, 노드를
   // 끈 뒤에도 이전 실패 문구가 화면에 남는다(실측).
+  let dbgLast = '';
+  function dbg(why) {
+    if (why === dbgLast) return;      // 같은 사유 반복은 한 번만
+    dbgLast = why;
+    fetch('/clienterr', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({msg: 'tune: ' + why}),
+    }).catch(() => {});
+  }
+
   async function refreshTune() {
-    if (tuneBusy) return;
+    if (tuneBusy) { dbg('busy'); return; }
     const target = activeControlNode();
     // tuneNode 에는 '성공적으로 슬라이더를 만든 노드' 만 기록한다. 실패하면
     // 손대지 않으므로 target !== tuneNode 가 유지되고, 다음 폴링에서 자연히
     // 재시도된다 — 플래그 조합으로 재시도 여부를 판단하지 않는다.
-    if (target === tuneNode) return;
-    if (target && Date.now() < tuneRetryAt) return;   // 재시도 간격 유지
+    if (target === tuneNode) { dbg('same:' + target); return; }
+    if (target && Date.now() < tuneRetryAt) {
+      dbg('wait:' + Math.round(tuneRetryAt - Date.now()) + 'ms');
+      return;
+    }
+    dbg('go:' + target);
     tuneBusy = true;
     try {
       await _refreshTuneInner(target);
@@ -794,22 +808,24 @@
         '/params?node=' + encodeURIComponent(target))).json();
     } catch (e) {
       // tuneNode 는 그대로 둔다 — target 과 다르므로 다음 폴링에서 재시도된다
-      tuneRetryAt = Date.now() + 1000;
+      tuneRetryAt = Date.now() + 400;
       return;
     }
     if (!r.ok) {
+      dbg('fail:' + r.msg);
       // 노드가 뜬 직후에는 파라미터 서비스가 아직 안 올라와 실패한다
       // (실측 ~2초). tuneNode 를 되돌려 다음 폴링(0.1초 후)에 재시도하게
       // 한다 — 안 그러면 target===tuneNode 로 조기 반환해 영구히 에러가
       // 남는다.
       st.textContent = r.msg + ' (재시도 중…)';
       st.classList.add('msg-err');
-      tuneRetryAt = Date.now() + 1000;
+      tuneRetryAt = Date.now() + 400;
       return;
     }
     st.classList.remove('msg-err');
     st.textContent = `${target} — ${r.params.length}개 파라미터`;
     tuneNode = target;                  // 성공했을 때만 기록
+    dbg('ok:' + r.params.length);
 
     for (const p of r.params) {
       // 범위는 현재 값 기준으로 잡는다. 0 이면 고정 범위를 준다.

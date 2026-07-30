@@ -1164,13 +1164,18 @@ class GuiServer(Node):
         # get_node_names() 를 다시 보면 DDS 등록 잔상 때문에 모드를 전환한
         # 뒤에도 옛 노드 이름이 몇 초간 남아, 게인 패널이 죽은 노드를
         # 조회해 실패한다(실측). 그래서 nodes 만 신뢰한다.
-        max_current = None
+        # control_node 는 프로세스 존재만으로 즉시 정한다. get_max_current 는
+        # 파라미터 서비스를 쓰므로 노드가 막 떴을 때 최대 2초 블로킹되는데,
+        # 그것 때문에 control_node 보고가 늦어지면 브라우저가 옛 상태(null)를
+        # 보고 재시도를 포기한다(실측한 버그). 그래서 순서를 분리한다.
         control_node = None
         for key, node_name in CONTROL_NODE_NAMES.items():
             if nodes.get(key):
                 control_node = node_name
-                max_current = self.get_max_current(node_name)
                 break
+        # 전류 한계는 부가 정보다 — 실패하면 None 이고 JS 가 기본값으로 폴백한다.
+        max_current = (self.get_max_current(control_node)
+                       if control_node else None)
         return {
             'camera': {
                 # 1초 넘게 프레임이 없으면 카메라 노드가 죽은 것으로 본다.
