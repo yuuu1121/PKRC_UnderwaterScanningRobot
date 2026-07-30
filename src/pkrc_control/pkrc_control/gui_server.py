@@ -470,8 +470,19 @@ class _Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
     def log_message(self, fmt, *args):
-        """기본 stderr 접근 로그를 끈다 — 10Hz 폴링이라 로그가 폭주한다."""
-        pass
+        """기본 stderr 접근 로그를 끈다 — 10Hz 폴링이라 로그가 폭주한다.
+
+        단 /params 와 /node 는 남긴다. 브라우저가 게인 패널을 못 여는 문제를
+        추적할 때 '브라우저가 실제로 요청을 보냈는가' 를 알 수 없으면
+        서버·브라우저 어느 쪽 문제인지 구분할 수 없다. 이 두 경로는
+        폴링이 아니라 사용자 조작 시에만 불리므로 로그가 폭주하지 않는다.
+        """
+        try:
+            path = self.path
+        except AttributeError:
+            return
+        if path.startswith('/params') or path.startswith('/node'):
+            self.server.node.get_logger().info(f'HTTP {path}')
 
     def _send(self, code, ctype, body: bytes):
         self.send_response(code)

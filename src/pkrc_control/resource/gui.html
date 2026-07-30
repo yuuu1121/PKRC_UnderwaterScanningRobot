@@ -666,14 +666,14 @@
   // 실패로 tuneNode 를 null 로 되돌린 상태와 "원래 노드가 없는" 상태를
   // 구분한다. 둘 다 null 이면 target===tuneNode 로 조기 반환되어, 노드를
   // 끈 뒤에도 이전 실패 문구가 화면에 남는다(실측).
-  let tuneFailed = false;
-
   async function refreshTune() {
     if (tuneBusy) return;
     const target = activeControlNode();
-    // 노드가 사라졌는데 직전에 실패 상태였다면 한 번 더 돌려 문구를 정리한다
-    if (target === tuneNode && !(target === null && tuneFailed)) return;
-    if (target && Date.now() < tuneRetryAt) return;   // 재시도 대기 중
+    // tuneNode 에는 '성공적으로 슬라이더를 만든 노드' 만 기록한다. 실패하면
+    // 손대지 않으므로 target !== tuneNode 가 유지되고, 다음 폴링에서 자연히
+    // 재시도된다 — 플래그 조합으로 재시도 여부를 판단하지 않는다.
+    if (target === tuneNode) return;
+    if (target && Date.now() < tuneRetryAt) return;   // 재시도 간격 유지
     tuneBusy = true;
     try {
       await _refreshTuneInner(target);
@@ -683,7 +683,6 @@
   }
 
   async function _refreshTuneInner(target) {
-    tuneNode = target;
     const sl = document.getElementById('sliders');
     const st = document.getElementById('tune-status');
     sl.innerHTML = '';
@@ -692,7 +691,7 @@
       st.classList.remove('msg-err');   // 이전 실패의 빨간 글씨를 지운다
       pmsg.textContent = '';            // 프리셋 쪽 안내도 함께 정리
       pmsg.classList.remove('msg-err');
-      tuneFailed = false;
+      tuneNode = null;                  // '노드 없음' 상태를 확정
       return;
     }
     st.textContent = `${target} 파라미터를 읽는 중…`;
@@ -701,8 +700,7 @@
       r = await (await fetch(
         '/params?node=' + encodeURIComponent(target))).json();
     } catch (e) {
-      tuneNode = null;   // 다음 폴링에서 재시도
-      tuneFailed = true;
+      // tuneNode 는 그대로 둔다 — target 과 다르므로 다음 폴링에서 재시도된다
       tuneRetryAt = Date.now() + 1000;
       return;
     }
@@ -713,14 +711,12 @@
       // 남는다.
       st.textContent = r.msg + ' (재시도 중…)';
       st.classList.add('msg-err');
-      tuneNode = null;
-      tuneFailed = true;
       tuneRetryAt = Date.now() + 1000;
       return;
     }
-    tuneFailed = false;
     st.classList.remove('msg-err');
     st.textContent = `${target} — ${r.params.length}개 파라미터`;
+    tuneNode = target;                  // 성공했을 때만 기록
 
     for (const p of r.params) {
       // 범위는 현재 값 기준으로 잡는다. 0 이면 고정 범위를 준다.
