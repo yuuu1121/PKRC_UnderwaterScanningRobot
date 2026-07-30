@@ -931,8 +931,15 @@ class GuiServer(Node):
     def _call(self, client, request, timeout=2.0):
         """서비스를 동기 호출한다. HTTP 스레드에서 호출되므로
         spin 하지 않고 future 이벤트를 기다린다 (rclpy 는 메인 스레드에서
-        이미 spin 중이다)."""
-        if not client.wait_for_service(timeout_sec=timeout):
+        이미 spin 중이다).
+
+        서비스 준비 대기는 0.25초만 한다. 2초를 기다리면 /params 응답이
+        2초 블로킹되고, 그 사이 사용자가 버튼을 다시 눌러 노드가 재기동되면
+        브라우저는 이미 사라진 노드의 실패 응답을 받는다 — 재시도가 영원히
+        헛도는 원인이었다(실측). 서비스가 아직 없으면 즉시 실패로 돌려주고,
+        브라우저가 400ms 후 다시 물어보게 하는 편이 훨씬 빠르게 붙는다.
+        """
+        if not client.wait_for_service(timeout_sec=0.25):
             return None
         future = client.call_async(request)
         done = threading.Event()
