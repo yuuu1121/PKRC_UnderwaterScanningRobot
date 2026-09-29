@@ -71,14 +71,14 @@ def test_watchdog_fires_after_timeout():
 
     assert wd.check(now=100.3) is None       # 아직 유효
     assert wd.check(now=100.49) is None      # 경계 직전
-    assert wd.check(now=100.51) == 'x'       # 발동
+    assert wd.check(now=100.51) == 'z'       # 발동
 
 
 def test_watchdog_fires_only_once():
-    """한 번 정지시킨 뒤 재발동하지 않는다 (x 폭주 방지)."""
+    """한 번 정지시킨 뒤 재발동하지 않는다 (z 폭주 방지)."""
     wd = KeyWatchdog(timeout=0.5)
     wd.touch('UP', now=100.0)
-    assert wd.check(now=101.0) == 'x'
+    assert wd.check(now=101.0) == 'z'
     assert wd.check(now=102.0) is None
     assert wd.check(now=200.0) is None
 
@@ -87,11 +87,11 @@ def test_watchdog_rearms_on_new_motion_key():
     """새 이동 키가 오면 다시 감시를 시작한다."""
     wd = KeyWatchdog(timeout=0.5)
     wd.touch('UP', now=100.0)
-    assert wd.check(now=101.0) == 'x'
+    assert wd.check(now=101.0) == 'z'
 
     wd.touch('LEFT', now=102.0)
     assert wd.check(now=102.2) is None
-    assert wd.check(now=103.0) == 'x'
+    assert wd.check(now=103.0) == 'z'
 
 
 def test_watchdog_ignores_nonmotion_keys():
