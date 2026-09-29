@@ -76,6 +76,7 @@ GUI 없이 띄우려면 `--ros-args -p tuning_gui:=false`, 터미널에서 직�
 | `depth_vel_ki` | 수직 속도 추종 적분 게인 (부력 상쇄) | 0.3 |
 | `depth_vel_kd` | 수직 속도 추종 미분 게인 | 0.15 |
 | `depth_step` | 키 1회당 목표 깊이 변화량 (m) | 0.10 |
+| `depth_max_ascent_vel` | 목표 상승 속도 상한 (m/s). 부력이 추력을 도와 상승이 빨라지므로 하강 상한(0.4)과 따로 둔다 | 0.15 |
 
 ## DVL 드리프트 보정
 

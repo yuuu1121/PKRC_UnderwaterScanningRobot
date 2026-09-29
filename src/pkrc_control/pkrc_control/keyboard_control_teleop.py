@@ -275,6 +275,7 @@ class CascadedDepthController:
                  vel_ki=0.3,
                  vel_kd=0.15,
                  max_velocity=0.4,
+                 max_ascent_velocity=0.15,
                  max_integral=0.5,
                  smoothing=0.4,
                  vel_filter_alpha=0.4):   # 속도가 센서율(10Hz)에서 이미 계산되므로 필터 적당히
@@ -283,6 +284,9 @@ class CascadedDepthController:
         self.vel_ki = vel_ki
         self.vel_kd = vel_kd
         self.max_velocity = max_velocity
+        # 상승은 부력이 추력을 돕기 때문에 하강보다 쉽게 빨라진다 —
+        # 별도 한계로 목표 상승 속도를 낮게 묶는다(제어기가 부력을 브레이크).
+        self.max_ascent_velocity = max_ascent_velocity
         self.max_integral = max_integral
         self.smoothing = smoothing
         self.vel_filter_alpha = vel_filter_alpha
@@ -313,8 +317,9 @@ class CascadedDepthController:
         # (control loop 의 50Hz dt 로 미분하면 4/5는 0, 1/5는 spike → 무의미)
 
         # 외부 P
+        # depth_error < 0 → 상승(target_vel 음수). 하강·상승 한계를 따로 둔다.
         target_vel = clamp(self.pos_kp * depth_error,
-                           -self.max_velocity, self.max_velocity)
+                           -self.max_ascent_velocity, self.max_velocity)
 
         # 내부 PID
         vel_err = target_vel - self.estimated_velocity
@@ -392,6 +397,7 @@ class KeyboardTeleopRobust(Node):
         self.declare_parameter('depth_vel_ki', 0.3)
         self.declare_parameter('depth_vel_kd', 0.15)
         self.declare_parameter('depth_step', 0.10)              # 키 1회당 10 cm
+        self.declare_parameter('depth_max_ascent_vel', 0.15)    # 목표 상승 속도 상한 [m/s]
         self.declare_parameter('water_density', 1000.0, _FIXED)   # kg/m³ (물성값)
         self.declare_parameter('gravity', 9.81, _FIXED)           # m/s² (물성값)
         self.declare_parameter('atmospheric_pressure_pa', 101325.0, _FIXED)  # 표준 대기압
@@ -475,7 +481,9 @@ class KeyboardTeleopRobust(Node):
             pos_kp=self.get_parameter('depth_pos_kp').value,
             vel_kp=self.get_parameter('depth_vel_kp').value,
             vel_ki=self.get_parameter('depth_vel_ki').value,
-            vel_kd=self.get_parameter('depth_vel_kd').value)
+            vel_kd=self.get_parameter('depth_vel_kd').value,
+            max_ascent_velocity=self.get_parameter(
+                'depth_max_ascent_vel').value)
 
         ms = self.get_parameter('max_current_surge').value
         mw = self.get_parameter('max_current_sway').value

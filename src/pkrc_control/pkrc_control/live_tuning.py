@@ -58,6 +58,7 @@ _ROUTES = {
     'depth_vel_kp':     ('depth_ctrl', 'vel_kp'),
     'depth_vel_ki':     ('depth_ctrl', 'vel_ki'),
     'depth_vel_kd':     ('depth_ctrl', 'vel_kd'),
+    'depth_max_ascent_vel': ('depth_ctrl', 'max_ascent_velocity'),
 
     # ── 노드 자신의 속성 ───────────────────────────────────────────────
     'yr_target_rate':       (None, 'yr_target_rate'),
