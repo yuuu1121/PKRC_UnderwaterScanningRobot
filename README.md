@@ -1,6 +1,6 @@
 # PKRC Underwater Scanning Robot
 
-수중 벽면 검사용 ROV(PKRC)의 ROS 2 워크스페이스입니다. Jetson Orin 위에서 스러스터 제어, 센서 드라이버, 카메라·레이저 검사, 측위(UKF-M/EKF), 웹 관제 GUI를 실행합니다.
+수중 벽면 검사용 ROV(PKRC)의 ROS 2 워크스페이스입니다. Jetson Orin 위에서 스러스터 제어, 센서 드라이버, 카메라·레이저 검사, 측위(UKF-M), 웹 관제 GUI를 실행합니다.
 
 - **플랫폼**: NVIDIA Jetson Orin (headless), Ubuntu + ROS 2 Humble
 - **추진**: VESC 6채널(CAN `can0`) — surge 2 · sway 2 · heave 2
@@ -48,7 +48,7 @@ ros2 launch pkrc_control gui.launch.py
 | 경로 | 종류 | 역할 |
 |:---|:---|:---|
 | `src/pkrc_control` | 자체 | **웹 GUI**, 키보드 텔레옵, 벽면 정렬, 스러스터 CAN 출력, 로깅 도구 |
-| `src/pkrc_controller` | 자체 | 측위(UKF-M/EKF), 센서 묶음 launch, 자기장 캘리브레이션 |
+| `src/pkrc_controller` | 자체 | 측위(UKF-M), 센서 묶음 launch, 자기장 캘리브레이션 |
 | `src/laser_camera_publisher` | 자체 | exploreHD 카메라 발행(MJPG 패스스루) + 카메라·레이저 평면 캘리브레이션 |
 | `src/active_marker` | 자체 | stellarHD 카메라 + LED ArUco 마커 6DoF 검출 |
 | `src/pressure_sensor/bar10xt_ros2` | 자체 | Keller Bar10XT 압력·수온·수심 (I2C) |
@@ -208,15 +208,14 @@ ros2 launch pkrc_controller control_sensors.launch.py [dvl_address:=192.168.0.22
 # 전체 센서 + 카메라 2대 + LED + 소나 + ArUco
 ros2 launch pkrc_controller full_system.launch.py [cameras:=false] [use_rviz:=true]
 
-# 측위
-ros2 launch pkrc_controller localization.launch.py                                          # UKF-M
-ros2 launch pkrc_controller localization.launch.py enable_ekf:=true                         # UKF-M + EKF
-ros2 launch pkrc_controller localization.launch.py enable_ekf:=true enable_comparison:=true  # + 비교 로거
+# 측위 (UKF-M + ArUco)
+ros2 launch pkrc_controller localization.launch.py
+ros2 run pkrc_controller ukfm_data_logger          # UKF-M 결과 CSV 기록
 ```
 
-- UKF-M 출력: `/ukfm/odom`, `/ukfm/odom_validated`, `/ukfm/path`, `/ukfm/wall_distance`
-- EKF 출력: `/ekf/odom`, `/ekf/path`
-- 비교 로거 CSV는 `src/plot_tools/csv_data/`에 저장됩니다.
+- 입력: `/imu/data`, `/dvl/data`, `/bar10xt/pressure`(수심 = (절대압 − 101325 Pa) / ρg), `/aruco/pose_array`
+- 출력: `/ukfm/odom`, `/ukfm/odom_validated`, `/ukfm/path`, `/ukfm/wall_distance`
+- IMU가 한 번이라도 들어와야 추정을 시작합니다.
 - 자기장 캘리브레이션: `python3 src/pkrc_controller/scripts/mag_calibration.py` (결과 `mag_cal_result.json`)
 
 ### 6.3 센서 드라이버
@@ -310,7 +309,7 @@ Tkinter 창에서 체커보드(5×4)를 여러 위치·각도에 두고 레이�
 | `/aruco/pose_6dof` · `/aruco/pose_array` | `PoseStamped` · `PoseArray` | aruco_detector_6dof |
 | `/gui/key` | `std_msgs/String` | gui_server → 조종 노드 |
 | `/teleop/*` (force, thruster_currents, yaw/depth/wall_debug, wall_mode) | `Float64MultiArray` 등 | 조종 노드 |
-| `/ukfm/*`, `/ekf/*` | `Odometry`, `Path` | pkrc_controller |
+| `/ukfm/*` | `Odometry`, `Path` | pkrc_controller |
 | `lumen/brightness` · `lumen/on_off` · `lumen/state` | `Float32` · `Bool` · `Float32` | lumen_led |
 
 QoS 주의: 압력(Bar10XT)과 DVL은 BEST_EFFORT, IMU와 측위는 RELIABLE, Ping1D는 RELIABLE입니다. 구독자와 QoS가 맞지 않으면 데이터가 들어오지 않습니다.
@@ -323,8 +322,6 @@ QoS 주의: 압력(Bar10XT)과 DVL은 BEST_EFFORT, IMU와 측위는 RELIABLE, Pi
 
 | 항목 | 내용 |
 |:---|:---|
-| 측위 노드의 압력 입력 | `ukfm_localization`·`ekf_localization_real`은 `/pressure`(`Float64`)를 구독합니다. 이 토픽은 `keller_ld_sensor`만 발행합니다. `control_sensors`/`full_system` launch가 띄우는 Bar10XT는 `/bar10xt/pressure`(`FluidPressure`)로 발행하므로 연결되지 않습니다. |
-| EKF 단독 launch | `ekf_localization_real.launch.py`, `ekf_ukfm_comparison.launch.py`는 실행 파일 이름에 `.py`가 붙어 있거나 없는 실행 파일을 가리킵니다. EKF는 `localization.launch.py enable_ekf:=true`로 실행하세요. |
 | `pkrc_controller/README.md` | `wall_following`, `depth_controller` 실행 예시가 있지만 현재 코드에는 해당 실행 파일이 없습니다(구버전 문서). |
 | `keyboard_control_robust_original` | 레거시 노드입니다. `/pressure`(Float64)를 구독하며 GUI에서는 켤 수 없습니다. |
 | `calibrate_camera.py` | 결과를 `~/ros2_ws/src/laser_ros/config/`로 복사하려는 코드가 남아 있습니다(다른 워크스페이스 경로, 무시해도 됨). |

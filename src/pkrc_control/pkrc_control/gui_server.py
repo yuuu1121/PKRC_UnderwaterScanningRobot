@@ -294,7 +294,7 @@ CONTROL_NODE_NAMES = {
 #
 # 각 값은 launch 파일을 직접 읽어 확인했다 (bar10xt.launch.py:26,
 # dvl_a50.launch.py:15, microstrain_launch.py:45, lumen_led.launch.py:9,
-# localization.launch.py:64/94/110/137).
+# localization.launch.py:39/73).
 # rosbag 은 ros2 bag record 라 실행파일 이름이 없다 — Popen 경로로만 정리된다.
 NODE_EXECUTABLES = {
     'pressure': [('bar10xt_ros2', 'bar10xt_node')],
@@ -305,8 +305,6 @@ NODE_EXECUTABLES = {
     'localization': [
         ('active_marker', 'aruco_detector_6dof'),
         ('pkrc_controller', 'ukfm_localization'),
-        ('pkrc_controller', 'ekf_localization_real'),
-        ('pkrc_controller', 'comparison_data_logger'),
     ],
     'aruco': [('active_marker', 'aruco_detector_6dof')],
     'teleop': [('pkrc_control', 'keyboard_control_teleop')],

@@ -5,7 +5,7 @@ Data Logger for UKF-M Localization (Real Robot Version)
 Subscribes:
   - /ukfm/odom (UKF-M estimate)
   - /imu/data (IMU)
-  - /pressure (Depth)
+  - /bar10xt/pressure (Depth)
   - /dvl/data (DVL velocity)
   - /aruco/pose_6dof (ArUco detection)
 
@@ -15,9 +15,8 @@ Saves to CSV file with timestamp and sensor data
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu, FluidPressure
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Float64
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import csv
 import os
@@ -133,7 +132,7 @@ class UKFMDataLogger(Node):
         self.imu_sub = self.create_subscription(
             Imu, '/imu/data', self.imu_callback, 10)
         self.pressure_sub = self.create_subscription(
-            Float64, '/pressure', self.pressure_callback, 10)
+            FluidPressure, '/bar10xt/pressure', self.pressure_callback, dvl_qos)
         self.aruco_sub = self.create_subscription(
             PoseStamped, '/aruco/pose_6dof', self.aruco_callback, 10)
 
@@ -225,12 +224,9 @@ class UKFMDataLogger(Node):
         self.dr_last_time = current_time
 
     def pressure_callback(self, msg):
-        """Convert pressure (mbar) to depth (meters)"""
-        # Pressure sensor publishes in mbar
-        pressure_mbar = msg.data
-        atm_mbar = 1013.25  # atmospheric pressure
+        """Convert absolute pressure [Pa] to depth (meters)"""
         # depth = (P - P_atm) / (rho * g)
-        self.depth = (pressure_mbar - atm_mbar) * 100.0 / (1025.0 * 9.81)
+        self.depth = (msg.fluid_pressure - 101325.0) / (1025.0 * 9.81)
 
     def dvl_callback(self, msg):
         """Store DVL data with coordinate transformation if enabled"""

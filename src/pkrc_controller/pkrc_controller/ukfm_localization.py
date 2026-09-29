@@ -23,7 +23,7 @@ State on SE2(3) Lie Group:
 Sensors:
     - IMU: /imu/data (GV7-INS) - orientation (after 180 deg x-axis correction)
     - DVL: /dvl/data (DVL A50) - body-frame velocity (after R_dvl_to_body)
-    - Depth: /pressure (MS5837) - depth from pressure
+    - Depth: /bar10xt/pressure (Bar10XT, FluidPressure) - depth from pressure
     - ArUco: /aruco/pose_array or /aruco/pose_6dof - absolute position (low-pass filtered)
 
 Publishes:
@@ -34,7 +34,7 @@ Publishes:
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Float64
+from sensor_msgs.msg import FluidPressure
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import PoseStamped, PoseArray
 from nav_msgs.msg import Odometry, Path
@@ -152,11 +152,12 @@ class UKFMLocalization(Node):
         # Parameters
         self.declare_parameter('frequency', 50.0)
         self.declare_parameter('imu_topic', '/imu/data')
-        self.declare_parameter('pressure_topic', '/pressure')
+        self.declare_parameter('pressure_topic', '/bar10xt/pressure')
         self.declare_parameter('dvl_topic', '/dvl/data')
         self.declare_parameter('aruco_topic', '/aruco/pose_array')
         self.declare_parameter('use_dvl', True)
         self.declare_parameter('water_density', 1025.0)
+        self.declare_parameter('atmospheric_pressure_pa', 101325.0)
 
         # IMU mounting configuration
         # If IMU is mounted upside-down, set to true to apply 180° rotation correction
@@ -200,6 +201,7 @@ class UKFMLocalization(Node):
         self.dt = 1.0 / self.frequency
         self.use_dvl = self.get_parameter('use_dvl').value and DVL_AVAILABLE
         self.water_density = self.get_parameter('water_density').value
+        self.atm_pressure_pa = self.get_parameter('atmospheric_pressure_pa').value
         self.aruco_filter_alpha = self.get_parameter('aruco_filter_alpha').value
         self.marker_timeout = self.get_parameter('marker_timeout').value
         self.use_aruco_correction = self.get_parameter('use_aruco_correction').value
@@ -344,9 +346,10 @@ class UKFMLocalization(Node):
         # Subscribers
         self.imu_sub = self.create_subscription(
             Imu, self.get_parameter('imu_topic').value, self.imu_callback, 10)
-        # Pressure sensor publishes Float64 (depth in meters)
+        # Bar10XT 는 sensor_data QoS(BEST_EFFORT) 로 발행 — RELIABLE 로 구독하면 안 붙는다
         self.pressure_sub = self.create_subscription(
-            Float64, self.get_parameter('pressure_topic').value, self.pressure_callback, 10)
+            FluidPressure, self.get_parameter('pressure_topic').value,
+            self.pressure_callback, dvl_qos)
         self.aruco_sub = self.create_subscription(
             PoseArray, self.get_parameter('aruco_topic').value, self.aruco_callback, 10)
 
@@ -428,14 +431,12 @@ class UKFMLocalization(Node):
                 )
 
     def pressure_callback(self, msg):
-        """Convert gauge pressure (mbar above atm) to depth (meters).
-        Bar-XT 는 gauge 센서라 msg.data 가 이미 대기압 대비 차압.
+        """Convert absolute pressure [Pa] to depth (meters).
+        fluid_pressure 는 절대압 — keyboard_control_teleop 과 같은 식을 쓴다.
         """
         with self.lock:
-            pressure_mbar = msg.data
-            # depth = gauge_pressure / (rho * g)   (대기압 빼지 않음)
-            self.depth = max(
-                0.0, pressure_mbar * 100.0 / (self.water_density * 9.81))
+            gauge_pa = msg.fluid_pressure - self.atm_pressure_pa
+            self.depth = max(0.0, gauge_pa / (self.water_density * 9.81))
 
     def dvl_callback(self, msg):
         """Process DVL A50 data with coordinate transformation

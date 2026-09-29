@@ -4,44 +4,19 @@ Localization Launch File
 모든 센서를 한번에 실행
 
 Usage:
-    # UKFM만 실행
     ros2 launch pkrc_controller localization.launch.py
-
-    # UKFM + EKF 동시 실행
-    ros2 launch pkrc_controller localization.launch.py enable_ekf:=true
-
-    # UKFM + EKF + 비교 로거 (3-way comparison)
-    ros2 launch pkrc_controller localization.launch.py enable_ekf:=true enable_comparison:=true
 """
 
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from launch.substitutions import LaunchConfiguration
-from launch.conditions import IfCondition
 import os
 
 
 def generate_launch_description():
-    # Launch arguments
-    enable_ekf = LaunchConfiguration('enable_ekf')
-    enable_comparison = LaunchConfiguration('enable_comparison')
-
     return LaunchDescription([
-        # Launch arguments
-        DeclareLaunchArgument(
-            'enable_ekf',
-            default_value='false',
-            description='Enable EKF localization (default: false, only UKFM)'
-        ),
-        DeclareLaunchArgument(
-            'enable_comparison',
-            default_value='false',
-            description='Enable EKF vs UKFM comparison logger (requires enable_ekf:=true)'
-        ),
-
         # # Microstrain IMU (GV7-INS)
         # IncludeLaunchDescription(
         #     PythonLaunchDescriptionSource([
@@ -100,54 +75,11 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'imu_topic': '/imu/data',
-                'pressure_topic': '/pressure',
+                'pressure_topic': '/bar10xt/pressure',
                 'dvl_topic': '/dvl/data',
                 'aruco_topic': '/aruco/pose_array',
                 'use_dvl': True,
                 'dvl_mount_yaw': 90.0,
-            }],
-        ),
-
-        # EKF Localization (optional)
-        Node(
-            package='pkrc_controller',
-            executable='ekf_localization_real',
-            name='ekf_localization_real',
-            output='screen',
-            condition=IfCondition(enable_ekf),
-            parameters=[{
-                'frequency': 50.0,
-                'imu_inverted': True,
-                'imu_rotation_axis': 'x',
-                'dvl_transform_enabled': False,  # Already transformed in DVL node
-                'water_density': 1025.0,
-                'gravity': 9.81,
-                # Process noise
-                'process_noise_pos': 0.01,
-                'process_noise_orient': 0.001,
-                'process_noise_vel': 0.01,
-                # Measurement noise
-                'measurement_noise_aruco_pos': 0.1,
-                'measurement_noise_aruco_orient': 0.05,
-                'measurement_noise_imu_orient': 0.01,
-                'measurement_noise_dvl_vel': 0.05,
-                'measurement_noise_depth': 0.01,
-            }],
-        ),
-
-        # 3-Way Comparison Logger: UKFM vs EKF vs 3-Sensor (requires enable_ekf:=true)
-        Node(
-            package='pkrc_controller',
-            executable='comparison_data_logger',
-            name='comparison_data_logger',
-            output='screen',
-            condition=IfCondition(enable_comparison),
-            parameters=[{
-                'output_dir': '/home/hero/hero_ws/src/plot_tools/csv_data',
-                'log_rate': 10.0,
-                'imu_inverted': True,
-                'imu_rotation_axis': 'x',
-                'dvl_transform_enabled': False,
             }],
         ),
     ])

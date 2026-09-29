@@ -25,8 +25,6 @@ setup(
         'console_scripts': [
             'ukfm_localization = pkrc_controller.ukfm_localization:main',
             'ukfm_data_logger = pkrc_controller.ukfm_data_logger:main',
-            'ekf_localization_real = pkrc_controller.ekf_localization:main',
-            'comparison_data_logger = pkrc_controller.comparison_data_logger:main',
         ],
     },
 )
