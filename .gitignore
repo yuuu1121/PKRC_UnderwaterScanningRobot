@@ -35,11 +35,6 @@ __pycache__/
 .vscode/
 .idea/
 
-# ── 외부 저장소 (자체 .git 보유 — 우리 코드가 아님) ───────────────────
-src/dvl_msgs/
-src/nmea_msgs/
-src/reach_robotics_sdk/
-src/dvl_a50/
 
 # ── OMC 런타임 상태 (운영 산출물) ──────────────────────────────────────
 .omc/

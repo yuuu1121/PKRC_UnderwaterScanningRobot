@@ -1,0 +1,158 @@
+import time
+import logging
+import numpy as np
+
+from typing import List
+from scipy.spatial.transform import Rotation as R
+
+from rs_protocol import RSProtocol, PacketID
+from device.device import Actuator, Router, Compute
+
+logging.basicConfig()
+logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+
+COMPUTE_ID_ALPHA = 0x05
+COMPUTE_ID = 0x0E
+ROUTER_ID = 0x0D
+
+
+class Manipulator:
+    def __init__(self, protocol: RSProtocol, num_actuators: int=0) -> None:
+        self.protocol = protocol
+        self.actuators: List[Actuator] = []
+        self.router: Router = Router(protocol, ROUTER_ID)
+        self.compute: Compute = Compute(protocol, COMPUTE_ID)
+
+        self.T_eg: np.ndarray = np.eye(4)
+        self.T_bg: np.ndarray = np.eye(4)
+ 
+        for i in range(1, num_actuators+1) if num_actuators else self.detect_actuators():
+            self.actuators.append(Actuator(protocol, i))
+
+        self.mount_transform_callback(ROUTER_ID, 
+                                      PacketID.MOUNT_TRANSFORM,
+                                      self.protocol.request(self.router.device_id, PacketID.MOUNT_TRANSFORM))
+        
+        self.protocol.register_callback(ROUTER_ID, 
+                                        PacketID.MOUNT_TRANSFORM, 
+                                        self.mount_transform_callback)
+        self.protocol.register_callback(COMPUTE_ID, 
+                                        PacketID.INVERSE_KINEMATICS_GLOBAL_POSITION, 
+                                        self.eg_transform_callback)
+        
+        # NOTE: Provides support for 5FN Reach Alpha manipulators. Demands are still sent to
+        # 0x0E. This has been tested on software version V5.3.5+. 
+        self.protocol.register_callback(COMPUTE_ID_ALPHA, 
+                                        PacketID.INVERSE_KINEMATICS_GLOBAL_POSITION, 
+                                        self.eg_transform_callback)
+    
+    def detect_actuators(self, attempts=10, timeout=0.1) -> set:
+        actuators = set()
+
+        while attempts > 0:
+            attempts -= 1
+            self.protocol.write(0xFF, PacketID.REQUEST, [PacketID.DEVICE_TYPE])
+            time.sleep(timeout)
+            packets = self.protocol.read() 
+            for packet in packets:
+                if packet[1] == PacketID.DEVICE_TYPE and packet[2][0] in [0, 1]:
+                    actuators.add(packet[0])
+
+        if not actuators:
+            raise ValueError("No actuators detected. "
+                             f"Please ensure the manipulator is connected.")
+
+        if not np.all(np.diff(np.array(sorted(actuators))) == 1):
+            raise ValueError(f"Non-sequential actuator IDs detected: {actuators}. " 
+                             f"Comms connection may be unstable.")
+
+        return actuators
+
+    def update(self) -> None:
+        self.protocol.write(0xFF, PacketID.REQUEST, [PacketID.POSITION,
+                                                     PacketID.VELOCITY, 
+                                                     PacketID.CURRENT, 
+                                                     PacketID.TORQUE, 
+                                                     PacketID.MODE,
+                                                     PacketID.INVERSE_KINEMATICS_GLOBAL_POSITION])
+        self.protocol.read()
+
+    def q(self) -> np.ndarray:
+        return np.array([actuator.state.q for actuator in self.actuators])
+    
+    def dq(self) -> np.ndarray:
+        return np.array([actuator.state.dq for actuator in self.actuators])
+    
+    def tau(self) -> np.ndarray:
+        return np.array([actuator.state.tau for actuator in self.actuators])
+    
+    def i(self) -> np.ndarray:
+        return np.array([actuator.state.Iq for actuator in self.actuators])
+    
+    def mode(self) -> np.ndarray:
+        return np.array([actuator.mode for actuator in self.actuators]+[self.router.mode, self.compute.mode])
+    
+    def get_end_effector_transform(self) -> np.ndarray:
+        """ 
+        Returns the cached end-effector to global frame transform. 
+        NOTE: this value is not updated unless a call to update() is made.
+        """
+        return self.T_eg
+    
+    def get_mount_transform(self) -> np.ndarray:
+        """ 
+        Returns the cached base to global frame transform. 
+        NOTE: this value is not updated unless a call to update() is made.
+        """
+        return self.T_bg
+    
+    def eg_transform_callback(self, device_id, packet_id, data) -> None:
+        if len(data) != 6:
+            logger.error(f"Unexpected data length {len(data)} for packet ID {PacketID.INVERSE_KINEMATICS_GLOBAL_POSITION}. "
+                         f"Discarding data.")
+            return
+
+        T_eg: np.ndarray = np.eye(4)
+        T_eg[0:3, 3] = np.array(data[0:3]) / 1000
+        T_eg[0:3, 0:3] = R.from_euler('ZYX', [data[3], data[4], data[5]]).as_matrix() # 'ZYX' for extrinsic rotations for YPR axes
+
+        self.T_eg = T_eg
+
+    def mount_transform_callback(self, device_id, packet_id, data) -> None:
+        if len(data) != 6:
+            logger.error(f"Unexpected data length {len(data)} for packet ID {packet_id}. "
+                         f"Discarding data.")
+            return
+        
+        T_bg = np.eye(4)
+        T_bg[0:3, 3] = np.array(data[0:3]) / 1000
+        T_bg[0:3, 0:3] = R.from_euler('zyx', data[3:6]).as_matrix()
+        self.T_bg = T_bg
+    
+    def ee_position_global(self, T_eg) -> None:
+        """ 
+        Send end-effector position command in global frame [X, Y, Z, RX, RY, RZ] (m, rad)
+        
+        WARNING: This method will command the manipulator to move to the specified 
+        end-effector pose using a local controller. This method does not generate a plan 
+        or perform any checks for reachability. It is the caller's responsibility to 
+        ensure the commanded pose is safe and reachable.
+        """
+        t_eg = np.array(T_eg[0:3, 3]) * 1000
+        r_eg = R.from_matrix(T_eg[0:3, 0:3]).as_euler('ZYX') # 'ZYX' for extrinsic rotations for YPR axes
+        self.protocol.write(self.compute.device_id, 
+                            PacketID.INVERSE_KINEMATICS_GLOBAL_POSITION, 
+                            list(t_eg)+list(r_eg))
+    
+    def ee_velocity_global(self, V_eg) -> None:
+        """ Send end-effector velocity command in global frame [X, Y, Z, RX, RY, RZ] (mm/s, rad/s)"""
+        self.protocol.write(self.compute.device_id, 
+                            PacketID.INVERSE_KINEMATICS_GLOBAL_VELOCITY, 
+                            V_eg[0:3]+V_eg[3:6][::-1])
+        
+    def ee_velocity_local(self, V_eg) -> None:
+        """ Send end-effector velocity command in "local" frame [X, Y, Z, RX, RY, RZ] (mm/s, rad/s)"""
+        self.protocol.write(self.compute.device_id, 
+                            PacketID.INVERSE_KINEMATICS_LOCAL_VELOCITY, 
+                            V_eg[0:3]+V_eg[3:6][::-1])

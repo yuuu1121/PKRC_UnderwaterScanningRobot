@@ -1,0 +1,259 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ROS 2 &mdash; Reach Robotics SDK 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=3fb7a366" />
+      <link rel="stylesheet" type="text/css" href="../_static/tabs.css?v=a5c4661c" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=8ebd99bd"></script>
+      <script src="../_static/doctools.js?v=888ff710"></script>
+      <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script src="../_static/tabs.js?v=3030b3cb"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="License" href="../license/index.html" />
+    <link rel="prev" title="Getting Started" href="../gettingstarted/index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Reach Robotics SDK
+              <img src="../_static/Reach.Robotics-Logo.White.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../gettingstarted/index.html">Getting Started</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ROS 2</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#setup">Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#packages">Packages</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rs-passthrough">rs_passthrough</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#examples">Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#reach-bravo-description">reach_bravo_description</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id2">Examples</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../license/index.html">License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Reach Robotics SDK</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">ROS 2</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/ros2/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="ros-2">
+<h1>ROS 2<a class="headerlink" href="#ros-2" title="Permalink to this heading"></a></h1>
+<p>This tutorial assumes you have either pre-installed <a class="reference external" href="http://wiki.ros.org/ROS/Installation/">ROS 2</a>
+or launched the included VS Code development container. For more details, please see <code class="docutils literal notranslate"><span class="pre">.devcontainer/readme.md</span></code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Before proceeding, please install the Reach Robotics SDK. Instructions
+for installation can found in the <a class="reference internal" href="../gettingstarted/index.html#getting-started"><span class="std std-ref">Getting Started</span></a> section.</p>
+</div>
+<section id="setup">
+<h2>Setup<a class="headerlink" href="#setup" title="Permalink to this heading"></a></h2>
+<p>First, source the ROS 2 underlay:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">source</span><span class="w"> </span>/opt/ros/foxy/setup.bash
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>It can be convenient to automatically source this script every time a new shell is launched.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;source /opt/ros/foxy/setup.bash&quot;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc
+<span class="nb">source</span><span class="w"> </span>~/.bashrc
+</pre></div>
+</div>
+<p>Keep in mind, if you have more than one ROS distribution installed, ~/.bashrc must only source
+the setup.bash for the version you are currently using.</p>
+</div>
+<p>Build the ROS 2 packages:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/workspace
+colcon<span class="w"> </span>build
+</pre></div>
+</div>
+<p>Source the ROS 2 overlay packages:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">source</span><span class="w"> </span>~/workspace/install/local_setup.bash
+</pre></div>
+</div>
+<p>At this point the Reach Robotics nodes have been built and are ready to use.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If you are using a ROS 2 distribution other than Foxy, you’ll need to modify the source
+command accordingly. I.e. <code class="docutils literal notranslate"><span class="pre">`source</span> <span class="pre">/opt/ros/humble/setup.bash`</span></code></p>
+</div>
+</section>
+<section id="packages">
+<h2>Packages<a class="headerlink" href="#packages" title="Permalink to this heading"></a></h2>
+<p>The ROS 2 folder is split into several packages. Each package is briefly described below.</p>
+<section id="rs-passthrough">
+<h3>rs_passthrough<a class="headerlink" href="#rs-passthrough" title="Permalink to this heading"></a></h3>
+<p>The RS passthrough is the core package that facilitates communication to Reach
+Robotics products. This passthrough converts ROS 2 messages into Serial or UDP
+packets that can be read by the connected product. Each node in the passthrough
+uses <code class="code docutils literal notranslate"><span class="pre">rs_msgs/Packet</span></code> for messaging. The packet construct is defined as:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">uint8</span> <span class="n">device_id</span>
+<span class="n">uint16</span> <span class="n">packet_id</span>
+<span class="n">uint8</span><span class="p">[]</span> <span class="n">int_data</span>
+<span class="n">float32</span><span class="p">[]</span> <span class="n">float_data</span>
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">device_id</span></code> is the device identifier, <code class="docutils literal notranslate"><span class="pre">packet_id</span></code> is the packet identifier,
+<code class="docutils literal notranslate"><span class="pre">int_data</span></code> is a list of 8 bit integers representing the integer data to be sent, and
+<code class="docutils literal notranslate"><span class="pre">float_data</span></code> is a list of 32 bit floating point numbers representing the floating point data
+to be sent. It’s important to note, that only one of <code class="docutils literal notranslate"><span class="pre">int_data</span></code> or <code class="docutils literal notranslate"><span class="pre">float_data</span></code> should be
+populated in a given packet.</p>
+<p>To launch the passthrough, run:</p>
+<div class="sphinx-tabs docutils container">
+<div aria-label="Tabbed content" class="closeable" role="tablist"><button aria-controls="panel-0-0-0" aria-selected="true" class="sphinx-tabs-tab" id="tab-0-0-0" name="0-0" role="tab" tabindex="0">Serial</button><button aria-controls="panel-0-0-1" aria-selected="false" class="sphinx-tabs-tab" id="tab-0-0-1" name="0-1" role="tab" tabindex="-1">UDP</button></div><div aria-labelledby="tab-0-0-0" class="sphinx-tabs-panel" id="panel-0-0-0" name="0-0" role="tabpanel" tabindex="0"><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>run<span class="w"> </span>rs_passthrough<span class="w"> </span>serial_passthrough<span class="w"> </span>--ros-args<span class="w"> </span>-p<span class="w"> </span>serial_port:<span class="o">=</span>&lt;/dev/ttyUSB0&gt;
+</pre></div>
+</div>
+<p>where,</p>
+<ul class="simple">
+<li><p><code class="code docutils literal notranslate"><span class="pre">serial_port</span></code> (string) - Serial Port to connect to the arm (Defaults to “/dev/ttyUSB0”)</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">baudrate</span></code> (int) - Baudrate port of the serial connection. (Defaults to 115200)</p></li>
+</ul>
+</div><div aria-labelledby="tab-0-0-1" class="sphinx-tabs-panel" hidden="true" id="panel-0-0-1" name="0-1" role="tabpanel" tabindex="0"><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>run<span class="w"> </span>rs_passthrough<span class="w"> </span>udp_passthrough<span class="w"> </span>--ros-args<span class="w"> </span>-p<span class="w"> </span>ip_address:<span class="o">=</span><span class="m">192</span>.168.2.4<span class="w"> </span>-p<span class="w"> </span>port:<span class="o">=</span><span class="m">6789</span>
+</pre></div>
+</div>
+<p>where,</p>
+<ul class="simple">
+<li><p><code class="code docutils literal notranslate"><span class="pre">ip_address</span></code> (string) - IP Address of the arm. (Defaults to 192.168.2.3)</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">port</span></code> (int) - UDP Port of the arm. (Defaults to 6789)</p></li>
+</ul>
+</div></div>
+<p>For both passthrough nodes, the published topic and the subscribed topic, respectively, are:</p>
+<ul class="simple">
+<li><p><code class="code docutils literal notranslate"><span class="pre">/rx</span></code> (<code class="code docutils literal notranslate"><span class="pre">rs_msgs/Packet</span></code>) - Received Packets from the manipulator</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">/tx</span></code> (<code class="code docutils literal notranslate"><span class="pre">rs_msgs/Packet</span></code>) - Packets that will be sent to the manipulator</p></li>
+</ul>
+<section id="examples">
+<h4>Examples<a class="headerlink" href="#examples" title="Permalink to this heading"></a></h4>
+<p>This example demonstrates how to request read actuator telemetry from a manipulator.</p>
+<p>To launch this example, run the launch file.</p>
+<div class="sphinx-tabs docutils container">
+<div aria-label="Tabbed content" class="closeable" role="tablist"><button aria-controls="panel-1-1-0" aria-selected="true" class="sphinx-tabs-tab" id="tab-1-1-0" name="1-0" role="tab" tabindex="0">Serial</button><button aria-controls="panel-1-1-1" aria-selected="false" class="sphinx-tabs-tab" id="tab-1-1-1" name="1-1" role="tab" tabindex="-1">UDP</button></div><div aria-labelledby="tab-1-1-0" class="sphinx-tabs-panel" id="panel-1-1-0" name="1-0" role="tabpanel" tabindex="0"><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>rs_passthrough<span class="w"> </span>serial_passthrough_example.launch.py<span class="w"> </span>serial_port:<span class="o">=</span><span class="s2">&quot;/dev/ttyUSB0&quot;</span>
+</pre></div>
+</div>
+</div><div aria-labelledby="tab-1-1-1" class="sphinx-tabs-panel" hidden="true" id="panel-1-1-1" name="1-1" role="tabpanel" tabindex="0"><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>rs_passthrough<span class="w"> </span>udp_passthrough_example.launch.py<span class="w"> </span>ip_address:<span class="o">=</span><span class="m">192</span>.168.2.4<span class="w"> </span>port:<span class="o">=</span><span class="m">6789</span>
+</pre></div>
+</div>
+</div></div>
+<p>The script communicates to the passthrough node via the <code class="code docutils literal notranslate"><span class="pre">/tx</span></code> and <code class="code docutils literal notranslate"><span class="pre">/rx</span></code> topics.
+It publishes request packets to the <code class="code docutils literal notranslate"><span class="pre">/tx</span></code> topic at a set frequency.
+It subscribes the to <code class="code docutils literal notranslate"><span class="pre">/rx</span></code> topic and listens for position packets.</p>
+</section>
+</section>
+<section id="reach-bravo-description">
+<h3>reach_bravo_description<a class="headerlink" href="#reach-bravo-description" title="Permalink to this heading"></a></h3>
+<p>Reach Bravo Description package contains the Universal Robot description File (URDF) files for the Bravo range of manipulators.</p>
+<p>Supported Products:</p>
+<ul class="simple">
+<li><p>RB-7002 - Reach Bravo 7 (PRO)</p></li>
+<li><p>RB-5002 - Reach Bravo 5 (PRO)</p></li>
+</ul>
+<section id="id2">
+<h4>Examples<a class="headerlink" href="#id2" title="Permalink to this heading"></a></h4>
+<p>Examples of viewing URDFs in RVIZ.</p>
+<a class="reference internal image-reference" href="../_images/rviz_bravo_7.png"><img alt="../_images/rviz_bravo_7.png" src="../_images/rviz_bravo_7.png" style="width: 600px;" /></a>
+<p>Viewing a Bravo 7 URDF:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>reach_bravo_description<span class="w"> </span>view_bravo_7.launch.py
+</pre></div>
+</div>
+<p>Viewing a Bravo 5 URDF:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>reach_bravo_description<span class="w"> </span>view_bravo_5.launch.py
+</pre></div>
+</div>
+<p>Viewing a Bravo 5 and Bravo 7 URDF:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ros2<span class="w"> </span>launch<span class="w"> </span>reach_bravo_description<span class="w"> </span>view_bravo_double.launch.py
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../gettingstarted/index.html" class="btn btn-neutral float-left" title="Getting Started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../license/index.html" class="btn btn-neutral float-right" title="License" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Reach Robotics PTY LTD.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
