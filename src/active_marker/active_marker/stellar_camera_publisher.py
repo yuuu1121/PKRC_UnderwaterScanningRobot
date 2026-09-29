@@ -33,7 +33,7 @@ class StellarCameraPublisher(Node):
         self.declare_parameter('camera_fps', 30)
         # Manual exposure tuned for LED markers
         self.declare_parameter('auto_exposure', 1)        # 1=manual, 3=auto
-        self.declare_parameter('exposure_time', 1)
+        self.declare_parameter('exposure_time', 100)
         self.declare_parameter('brightness', -64)
         self.declare_parameter('contrast', 64)
         self.declare_parameter('gamma', 90)

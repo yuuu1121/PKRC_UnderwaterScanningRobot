@@ -3,14 +3,14 @@
 녹색 레이저 평면 캘리브레이션 (Tkinter GUI 버전)
 
 전제:
-    camera.py 가 CompressedImage 토픽으로 publish 중이어야 함.
-    (토픽 이름은 GUI 상단에서 변경 가능)
+    카메라(/dev/video0)를 직접 연다 — laser_camera_publisher 가 켜져 있으면
+    장치를 못 여니 먼저 꺼야 한다 (pkill -f laser_camera_publisher).
 
 사용법:
     python3 calibrate_laser.py
-    python3 calibrate_laser.py --topic /camera/image_raw/compressed --angle 0
+    python3 calibrate_laser.py --device /dev/video0 --exposure 50 --angle 0
 
-- 단일 Tkinter 창: 토픽 입력, 근/원거리 셀 전환, 임계값 슬라이더,
+- 단일 Tkinter 창: 근/원거리 셀 전환, 임계값 슬라이더,
   ROI 스왑, 디버그 신호 뷰, 캡처/평면 계산 버튼
 - 검출 방식 토글: 기존 녹색판별(legacy) ↔ 신규 밝기대비(contrast)
 - 키보드 단축키: SPACE(캡처) b(셀 전환) t(ROI 스왑) m(검출방식) c(평면 계산) q/ESC(종료)
@@ -19,6 +19,8 @@
 """
 
 import argparse
+import subprocess
+import threading
 import tkinter as tk
 from tkinter import messagebox
 
@@ -26,15 +28,16 @@ import cv2
 import numpy as np
 import yaml
 
-import rclpy
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import CompressedImage
-
 # ─── 인자 파싱 ───────────────────────────
 parser = argparse.ArgumentParser(description="녹색 레이저 평면 캘리브레이션 (Tkinter GUI)")
-parser.add_argument("--topic", default="/image_raw/compressed",
-                    help="초기 이미지 토픽. GUI에서 변경 가능.")
+# 기본 장치는 camera_node.py 와 같은 by-path — 하방 카메라(같은 exploreHD,
+# 같은 시리얼) 추가로 /dev/videoN 번호가 밀리므로 번호로 지정하지 않는다.
+parser.add_argument("--device",
+                    default=("/dev/v4l/by-path/"
+                             "platform-3610000.usb-usb-0:2.1.2:1.0-video-index0"),
+                    help="카메라 장치. 기본: 레이저 exploreHD (by-path).")
+parser.add_argument("--exposure", type=int, default=50,
+                    help="수동 노출값 (v4l2 exposure_time_absolute). 기본 50.")
 parser.add_argument("--angle", type=float, default=0.0,
                     help="레이저 라인 각도(도). 가로=0. 대각선이면 45 등으로 설정.")
 parser.add_argument("--cell-near", type=float, default=40.0,
@@ -307,35 +310,62 @@ def ray_plane_intersect(ray, n, d):
     return t * ray if t > 0 else None
 
 
-# ─── ROS 서브스크라이버 ───────────────────
+# ─── 직접 캡처 ────────────────────────────
+# ROS 토픽 경유(publish→DDS→imdecode)의 지연을 없애려고 camera_node.py 와
+# 같은 GStreamer MJPG 파이프라인으로 장치를 직접 연다. OpenCV V4L2 백엔드는
+# 이 카메라에서 20fps 로 막히므로(camera_node.py:33-36 실측) 반드시 GStreamer.
 
-class LaserCalibrator(Node):
-    def __init__(self, topic):
-        super().__init__('laser_calibrator')
-        self.current_frame = None
-        self.topic = topic
-        self._sub = None
-        self.subscribe(topic)
+class DirectCamera:
+    """camera_node.py 와 동일한 파이프라인으로 /dev/videoX 를 직접 읽는다.
 
-    def subscribe(self, topic):
-        """구독 토픽 교체. 기존 구독 해제 후 재구독, 프레임 리셋."""
-        if self._sub is not None:
-            self.destroy_subscription(self._sub)
+    appsink 가 JPEG 바이트를 주므로 스레드에서 imdecode 까지 해서
+    current_frame 에 BGR 최신 프레임 하나만 유지한다 (기존 image_cb 와 동일).
+    """
+
+    def __init__(self, device, exposure):
+        self.device = device
         self.current_frame = None
-        self.topic = topic
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=5,
+        self._running = True
+
+        # camera_node.py:53-57 과 같은 순서 — 포맷/크기/fps 는 파이프라인
+        # caps 가, 노출은 v4l2-ctl 이 담당한다 (cap.set 은 GStreamer 백엔드를
+        # 통과하지 못한다).
+        self._v4l2_ctl("auto_exposure=1")
+        self._v4l2_ctl(f"exposure_time_absolute={exposure}")
+
+        pipeline = (
+            f"v4l2src device={device} io-mode=2 ! "
+            f"image/jpeg,width=1280,height=720,framerate=30/1 ! "
+            f"jpegparse ! appsink drop=true max-buffers=1 sync=false"
         )
-        self._sub = self.create_subscription(CompressedImage, topic, self.image_cb, qos)
-        self.get_logger().info(f"Subscribing : {topic}")
+        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        if not self.cap.isOpened():
+            raise RuntimeError(
+                f"{device} 열기 실패 — laser_camera_publisher 가 켜져 있으면 "
+                f"장치를 점유합니다. 먼저 끄세요: pkill -f laser_camera_publisher")
 
-    def image_cb(self, msg):
-        buf = np.frombuffer(msg.data, dtype=np.uint8)
-        frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-        if frame is not None:
-            self.current_frame = frame
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _v4l2_ctl(self, ctrl):
+        r = subprocess.run(["v4l2-ctl", "-d", self.device, f"--set-ctrl={ctrl}"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"  v4l2-ctl {ctrl} 실패: {r.stderr.strip()}")
+
+    def _loop(self):
+        while self._running:
+            ret, buf = self.cap.read()   # 1D uint8 JPEG 바이트 (jpegparse 출력)
+            if not ret or buf is None:
+                continue
+            frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+            if frame is not None:
+                self.current_frame = frame
+
+    def release(self):
+        self._running = False
+        self._thread.join(timeout=1.0)
+        self.cap.release()
 
 
 # ─── GUI ─────────────────────────────────
@@ -366,16 +396,6 @@ class CalibApp:
 
         self.photo = None        # PhotoImage 참조 유지 (GC 방지)
         self.closing = False
-
-        # ── 상단: 토픽 입력 ──
-        top = tk.Frame(root)
-        top.pack(fill=tk.X, padx=8, pady=(8, 2))
-        tk.Label(top, text="토픽:").pack(side=tk.LEFT)
-        self.topic_var = tk.StringVar(value=node.topic)
-        entry = tk.Entry(top, textvariable=self.topic_var)
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        entry.bind("<Return>", lambda e: self.apply_topic())
-        tk.Button(top, text="적용", command=self.apply_topic).pack(side=tk.LEFT)
 
         # ── 셀 크기 (근/원거리) ──
         cell = tk.Frame(root)
@@ -465,23 +485,9 @@ class CalibApp:
         print(f"  셀 크기 전환 → {self.active_cell():.0f}mm {tag} "
               f"(보드를 실제로 바꿔 끼웠는지 확인!)")
 
-    def apply_topic(self):
-        topic = self.topic_var.get().strip()
-        if not topic:
-            return
-        if topic == self.node.topic:
-            return
-        self.node.subscribe(topic)
-        self.calib_size = None            # 해상도가 다를 수 있으니 맵 재계산
-        self.last_found = False
-        self.last_laser_pixels = []
-        self.video.config(image="", text="프레임 대기 중…")
-        self.photo = None
-        print(f"  토픽 변경 → {topic}")
-
     def on_key(self, event):
         if isinstance(event.widget, tk.Entry):
-            return                        # 토픽 입력 중엔 단축키 무시
+            return                        # 입력 위젯에서는 단축키 무시
         k = event.keysym.lower()
         if k == "space":
             self.capture()
@@ -513,16 +519,10 @@ class CalibApp:
     def update(self):
         if self.closing:
             return
-        if not rclpy.ok():
-            # Ctrl+C(SIGINT/SIGTERM) 시 rclpy 시그널 핸들러가 컨텍스트를
-            # 먼저 닫는다 — spin_once 를 부르면 RCLError 가 나므로 GUI 도 종료.
-            self.close()
-            return
-        rclpy.spin_once(self.node, timeout_sec=0)
 
         frame = self.node.current_frame
         if frame is None:
-            self.status_var.set(f"프레임 대기 중… (토픽: {self.node.topic})")
+            self.status_var.set(f"프레임 대기 중… (장치: {self.node.device})")
             self.root.after(self.UPDATE_MS, self.update)
             return
 
@@ -717,11 +717,10 @@ class CalibApp:
 # ─── 메인 ────────────────────────────────
 
 def main():
-    rclpy.init()
-    node = LaserCalibrator(args.topic)
+    node = DirectCamera(args.device, args.exposure)
 
     print(f"라인 각도 : {LINE_ANGLE:.1f}도")
-    print(f"토픽      : {args.topic} (GUI에서 변경 가능)")
+    print(f"장치      : {args.device} (노출 {args.exposure})")
     print(f"출력 파일 : {OUTPUT_FILE}")
     print(f"검출 방식 : {METHOD_DEFAULT} (GUI 라디오버튼 또는 m 키로 전환)")
     print("조작법: SPACE(캡처) b(셀 전환) t(ROI 스왑) m(검출방식) c(평면 계산) q/ESC(종료)\n")
@@ -733,9 +732,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        if rclpy.ok():
-            node.destroy_node()
-            rclpy.shutdown()
+        node.release()
 
 
 if __name__ == '__main__':

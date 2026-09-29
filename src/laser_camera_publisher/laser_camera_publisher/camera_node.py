@@ -18,7 +18,13 @@ from sensor_msgs.msg import CompressedImage
 from rcl_interfaces.msg import SetParametersResult
 
 # ─────────────────────────────────────────
-CAMERA_DEVICE    = "/dev/video0"   # exploreHD USB Camera
+# 레이저 exploreHD 는 by-path 로 지정한다. 이유: 하방 카메라도 같은
+# exploreHD 인데 시리얼까지 동일해서(둘 다 SN00009) by-id 로는 구분이
+# 불가능하고, /dev/videoN 번호는 USB 열거 순서에 따라 밀린다(실제 사고).
+# by-path 는 물리 포트 기준이라 케이블을 같은 포트에 꽂는 한 안정적이다.
+# ponytail: 허브를 다른 포트로 옮기면 깨진다 — 그때는 이 경로만 갱신할 것.
+CAMERA_DEVICE    = ("/dev/v4l/by-path/"
+                    "platform-3610000.usb-usb-0:2.1.2:1.0-video-index0")
 PUBLISH_TOPIC    = "/image_raw/compressed"
 PUBLISH_HZ       = 30
 DEFAULT_EXPOSURE = 50
@@ -34,17 +40,25 @@ FRAME_HEIGHT     = 720
 # 20fps at every resolution (measured), while v4l2-ctl and GStreamer both
 # reach 30. jpegparse keeps the JPEG bytes intact so the passthrough
 # contract below is unchanged -- appsink hands us the same MJPG buffer.
-GST_PIPELINE = (
-    f"v4l2src device={CAMERA_DEVICE} io-mode=2 ! "
-    f"image/jpeg,width={FRAME_WIDTH},height={FRAME_HEIGHT},framerate={PUBLISH_HZ}/1 ! "
-    f"jpegparse ! appsink drop=true max-buffers=1 sync=false"
-)
+def gst_pipeline(device):
+    return (
+        f"v4l2src device={device} io-mode=2 ! "
+        f"image/jpeg,width={FRAME_WIDTH},height={FRAME_HEIGHT},framerate={PUBLISH_HZ}/1 ! "
+        f"jpegparse ! appsink drop=true max-buffers=1 sync=false"
+    )
 # ─────────────────────────────────────────
 
 
 class LaserCameraPublisher(Node):
     def __init__(self):
         super().__init__("laser_camera_publisher")
+
+        # device/topic 을 파라미터로 열어 하방 카메라도 같은 노드를 쓴다
+        # (downward_camera.launch.py). 기본값은 기존 레이저 카메라 그대로.
+        self.declare_parameter("device", CAMERA_DEVICE)
+        self.declare_parameter("topic", PUBLISH_TOPIC)
+        self.device = self.get_parameter("device").value
+        topic = self.get_parameter("topic").value
 
         self.declare_parameter("exposure", DEFAULT_EXPOSURE)
         self.declare_parameter("gamma", DEFAULT_GAMMA)
@@ -56,9 +70,9 @@ class LaserCameraPublisher(Node):
         self._apply_exposure(DEFAULT_EXPOSURE)
         self._apply_gamma(DEFAULT_GAMMA)
 
-        self.cap = cv2.VideoCapture(GST_PIPELINE, cv2.CAP_GSTREAMER)
+        self.cap = cv2.VideoCapture(gst_pipeline(self.device), cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
-            self.get_logger().fatal(f"Cannot open {CAMERA_DEVICE} via GStreamer")
+            self.get_logger().fatal(f"Cannot open {self.device} via GStreamer")
             raise RuntimeError("Camera open failed")
 
         qos = QoSProfile(
@@ -66,14 +80,14 @@ class LaserCameraPublisher(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        self.pub = self.create_publisher(CompressedImage, PUBLISH_TOPIC, qos)
+        self.pub = self.create_publisher(CompressedImage, topic, qos)
 
         self._running = True
         self._cap_thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._cap_thread.start()
 
         self.get_logger().info(
-            f"Publishing {PUBLISH_TOPIC} @ {PUBLISH_HZ}Hz  |  "
+            f"Publishing {topic} @ {PUBLISH_HZ}Hz  |  "
             f"{FRAME_WIDTH}x{FRAME_HEIGHT}  |  "
             f"exposure={DEFAULT_EXPOSURE}  "
             f"(change: ros2 param set /laser_camera_publisher exposure <val>)"
@@ -94,7 +108,7 @@ class LaserCameraPublisher(Node):
         """Set one V4L2 control. cap.set() does not reach the device through
         the GStreamer backend, so controls go via v4l2-ctl instead."""
         r = subprocess.run(
-            ["v4l2-ctl", "-d", CAMERA_DEVICE, f"--set-ctrl={ctrl}"],
+            ["v4l2-ctl", "-d", self.device, f"--set-ctrl={ctrl}"],
             capture_output=True, text=True)
         if r.returncode != 0:
             self.get_logger().warn(f"v4l2-ctl {ctrl} failed: {r.stderr.strip()}")

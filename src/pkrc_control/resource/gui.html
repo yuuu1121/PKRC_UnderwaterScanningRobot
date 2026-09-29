@@ -18,8 +18,15 @@
 
   <!-- 좌: 카메라 + 조종 -->
   <section class="panel" id="col-left">
+    <!-- 카메라 전환. 한 번에 하나만 스트리밍한다 — 둘 다 흘리면 링크가
+         포화돼 조종 fetch 까지 늦어진다(STREAM_MAX_FPS 주석 참조). -->
+    <div id="cam-tabs">
+      <button class="camtab on" data-cam="laser">레이저</button>
+      <button class="camtab" data-cam="stellar">stellarHD</button>
+      <button class="camtab" data-cam="downward">Downward</button>
+    </div>
     <div id="cam-wrap">
-      <img id="cam" src="/stream" alt="레이저 카메라">
+      <img id="cam" src="/stream?cam=laser" alt="카메라 영상">
     </div>
     <div id="cam-ctrl">
       <label>노출 <input type="range" id="cam-exp" min="1" max="5000"
@@ -30,6 +37,29 @@
              step="1" value="100">
         <input type="number" id="cam-gam-v" min="72" max="500" step="1"
                value="100"></label>
+    </div>
+    <!-- 레이저 검출 오버레이. 검출식은 calibrate_laser.py 와 같다.
+         끄면 서버가 JPEG 를 손대지 않는 원래 경로로 돌아간다. -->
+    <div id="laser-ctrl">
+      <div class="row">
+        <button id="laser-off" class="lasermode on">검출 끔</button>
+        <button id="laser-legacy" class="lasermode">녹색</button>
+        <button id="laser-contrast" class="lasermode">밝기대비</button>
+      </div>
+      <div id="laser-opts" style="display:none">
+        <label>임계 <input type="range" id="laser-thr" min="1" max="60"
+               step="1" value="12">
+          <input type="number" id="laser-thr-v" min="1" max="250" step="1"
+                 value="12"></label>
+        <label>검출 해상도
+          <select id="laser-det">
+            <option value="640" selected>640 (가벼움)</option>
+            <option value="1280">1280 (전체)</option>
+          </select></label>
+        <label class="chk"><input type="checkbox" id="laser-ransac">
+          직선 맞춤(RANSAC)</label>
+        <div class="hint" id="laser-warn"></div>
+      </div>
     </div>
     <div id="pad">
       <div class="row">
@@ -71,10 +101,37 @@
       <tr><th>DVL surge</th><td id="v-dvl-x">–</td>
           <th>sway</th><td id="v-dvl-y">–</td>
           <th>pitch</th><td id="v-pitch">–</td></tr>
-      <tr><th>소나 거리</th><td id="v-sonar">–</td>
-          <th>신뢰도</th><td id="v-conf">–</td>
+      <tr><th>신뢰도</th><td id="v-conf">–</td>
           <th>벽정렬</th><td id="v-wmode">–</td></tr>
     </table>
+    <h2>측위 실시간</h2>
+    <!-- 두 소스를 나란히 둔다. 좌표계가 다르므로(UKFM=월드, ArUco=카메라
+         광학) 같은 축으로 오해하지 않도록 라벨을 따로 붙인다. -->
+    <div id="pose-box">
+      <div class="pose" id="pose-ukfm">
+        <div class="ph"><span class="pt">측위 UKFM</span>
+          <span class="phz" id="p-ukfm-hz">–</span></div>
+        <div class="pv">
+          <span>X <b id="p-ukfm-x">–</b></span>
+          <span>Y <b id="p-ukfm-y">–</b></span>
+          <span>Z <b id="p-ukfm-z">–</b></span>
+          <span>Yaw <b id="p-ukfm-yaw">–</b></span>
+        </div>
+        <div class="pnote" id="p-ukfm-note">/ukfm/odom</div>
+      </div>
+      <div class="pose" id="pose-aruco">
+        <div class="ph"><span class="pt">ArUco 6DOF</span>
+          <span class="phz" id="p-aruco-hz">–</span></div>
+        <div class="pv">
+          <span>X <b id="p-aruco-x">–</b></span>
+          <span>Y <b id="p-aruco-y">–</b></span>
+          <span>Z <b id="p-aruco-z">–</b></span>
+          <span>Yaw <b id="p-aruco-yaw">–</b></span>
+        </div>
+        <div class="pnote" id="p-aruco-note">/aruco/pose_6dof</div>
+      </div>
+    </div>
+
     <div id="thrusters"></div>
     <canvas id="chart" width="440" height="90"></canvas>
     <p class="legend"><span style="color:#4af">■</span> 방위 오차 [°]
@@ -135,6 +192,14 @@
   h2 { font-size: 11px; font-weight: 600; text-transform: uppercase;
        letter-spacing: .08em; color: var(--dim); margin: 0; }
 
+  /* ── 카메라 탭 ── */
+  #cam-tabs { flex: 0 0 auto; display: flex; gap: 4px; }
+  .camtab { flex: 1; padding: 4px; font-size: 11px; cursor: pointer;
+            background: #2a2a2a; color: var(--dim);
+            border: 1px solid #444; border-radius: 3px; }
+  .camtab.on { background: #06c; color: var(--fg);
+               border-color: var(--accent); }
+
   /* ── 카메라 ── 남는 높이만 쓰고, 부족하면 먼저 줄어든다. */
   #cam-wrap { flex: 1 1 auto; min-height: 0; display: flex;
               align-items: center; justify-content: center;
@@ -168,6 +233,30 @@
     padding: 1px 3px; font-size: 10px;
     font-variant-numeric: tabular-nums; }
 
+  /* ── 레이저 검출 오버레이 ── */
+  #laser-ctrl { flex: 0 0 auto; display: flex; flex-direction: column;
+                gap: 3px; margin-top: 4px; padding-top: 4px;
+                border-top: 1px solid var(--line); }
+  #laser-ctrl .row { display: flex; gap: 3px; }
+  .lasermode { flex: 1; padding: 3px 4px; font-size: 10px; cursor: pointer;
+    background: #222; color: var(--fg); border: 1px solid #444;
+    border-radius: 3px; }
+  .lasermode.on { background: #6a1f6a; border-color: #b040b0; }
+  #laser-opts { display: flex; flex-direction: column; gap: 2px; }
+  #laser-opts label { display: flex; align-items: center; gap: 5px;
+                      font-size: 10px; color: var(--dim); }
+  #laser-opts label.chk { cursor: pointer; }
+  #laser-opts input[type=range] { flex: 1; accent-color: #b040b0;
+                                  margin: 0; }
+  #laser-opts input[type=number] { width: 3.6rem; background: #222;
+    color: var(--fg); border: 1px solid #444; border-radius: 3px;
+    padding: 1px 3px; font-size: 10px;
+    font-variant-numeric: tabular-nums; }
+  #laser-opts select { background: #222; color: var(--fg);
+    border: 1px solid #444; border-radius: 3px; padding: 1px 3px;
+    font-size: 10px; }
+  #laser-warn { font-size: 9px; color: var(--bad); min-height: 11px; }
+
   /* ── 노드 토글 ── */
   #nodes { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
   .nodegrp { border: 1px solid var(--line); border-radius: 4px;
@@ -178,6 +267,16 @@
              background: #2a2a2a; color: var(--fg);
              border: 1px solid #444; border-radius: 3px; }
   .nodebtn.on { background: #0a5c2a; border-color: #17a34a; }
+  /* 상태 점 — 버튼의 '켜짐'(내가 켰나)과 별개로 '데이터가 오나' 를 보여준다.
+     프로세스가 살아있어도 장치가 안 붙어 있으면 노드는 로그만 뱉으며
+     멀쩡히 떠 있어서, 버튼 색만으로는 진짜 작동 여부를 알 수 없다. */
+  .nodebtn .dot { display: inline-block; width: 7px; height: 7px;
+                  border-radius: 50%; margin-right: 5px;
+                  vertical-align: middle; background: #666; }
+  .nodebtn .dot.ok { background: #17a34a; box-shadow: 0 0 4px #17a34a; }
+  .nodebtn .dot.nodata { background: var(--bad); box-shadow: 0 0 4px var(--bad); }
+  .nodebtn .hz { font-size: 9px; color: var(--dim);
+                 font-variant-numeric: tabular-nums; margin-left: 4px; }
   .nodegrp label { font-size: 11px; color: var(--dim); }
   .nodegrp input[type=number] { width: 3.6rem; background: #222;
     color: var(--fg); border: 1px solid #444; border-radius: 3px;
@@ -196,6 +295,27 @@
   #nums th { background: #202020; color: var(--dim); font-weight: 400;
              text-align: left; white-space: nowrap; }
   #nums td { text-align: right; }
+
+  /* ── 측위 실시간 ── 두 소스를 나란히. 중앙 열이 overflow:hidden 이라
+     flex: 0 0 auto 로 고정 높이만 차지해야 한다(늘어나면 밀려 잘린다). */
+  #pose-box { flex: 0 0 auto; display: grid; gap: 4px;
+              grid-template-columns: 1fr 1fr; }
+  .pose { border: 1px solid var(--line); border-radius: 4px;
+          padding: 3px 6px; background: #141414; }
+  .pose .ph { display: flex; justify-content: space-between;
+              align-items: baseline; }
+  .pose .pt { font-size: 10px; color: var(--dim); letter-spacing: .04em; }
+  .pose .phz { font-size: 10px; color: var(--accent);
+               font-variant-numeric: tabular-nums; }
+  .pose .pv { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px;
+              font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .pose .pv b { color: var(--fg); font-weight: 500;
+                font-variant-numeric: tabular-nums; }
+  .pose .pnote { font-size: 9px; color: #666; margin-top: 1px;
+                 font-family: ui-monospace, monospace; }
+  /* 데이터가 끊기면 수치 전체를 죽은 색으로 — 옛 좌표가 살아있는 값처럼
+     보이면 측위가 되고 있다고 오해한다. */
+  .pose.stale .pv b, .pose.stale .phz { color: var(--bad); }
 
   /* ── 스러스터 바 ── track 을 flex 로 늘려 폭을 화면에 맞춘다. */
   #thrusters { flex: 0 0 auto; display: flex; flex-direction: column;
@@ -253,11 +373,132 @@
   // 원인을 알 수 없으므로 상태를 글자로 명시한다.
   const img = document.getElementById('cam');
   const status = document.getElementById('cam-status');
+  // 아래 error 핸들러가 이 값을 읽는다. let 은 TDZ 가 있어서 선언보다
+  // 먼저 실행되면 ReferenceError 가 난다 — 페이지 로드 직후 영상이
+  // 실패하면 그 핸들러가 즉시 도는데, 선언이 아래에 있으면 그때 죽는다.
+  // (이 파일에서 같은 함정으로 poll() 전체가 멈춘 적이 있다)
+  let curCam = 'laser';
   img.addEventListener('load', () => { status.textContent = ''; });
+  // 어느 카메라를 보고 있느냐에 따라 확인할 노드가 다르다.
+  const CAM_SOURCE = {
+    laser: 'laser_camera_publisher',
+    stellar: '측위 또는 ArUco 단독 노드',
+    downward: 'downward_camera_publisher',
+  };
   img.addEventListener('error', () => {
     status.textContent =
-      '영상 없음 — laser_camera_publisher 가 떠 있는지 확인하세요.';
+      `영상 없음 — ${CAM_SOURCE[curCam]} 가 떠 있는지 확인하세요.`;
   });
+
+  // ── 카메라 전환 ────────────────────────────────────────────────
+  // src 를 바꾸면 브라우저가 이전 MJPEG 연결을 끊고, 서버의 스트림
+  // 스레드가 빠져나가며 시청자 수를 줄인다. 그래서 stellar 탭을 떠나면
+  // 되쏘기(publish_raw_image)가 자동으로 꺼진다 — UI 와 서버가 저절로
+  // 맞물리므로 별도 '끄기' 요청을 보낼 필요가 없다.
+  // (curCam 선언은 맨 위 — error 핸들러가 먼저 읽을 수 있어서다)
+
+  // 레이저 오버레이 설정. 'off' 면 laser 인수를 아예 붙이지 않아 서버가
+  // 원래의 무손실 passthrough 경로로 간다.
+  let laserMode = 'off';
+
+  // 검출식마다 신호 스케일이 달라 임계값을 공유할 수 없다.
+  // (laser_overlay.py SIGNAL_THR_LEGACY / SIGNAL_THR_CONTRAST 와 같은 값)
+  const LASER_THR_DEFAULT = {legacy: 12, contrast: 4};
+  const LASER_THR_MAX = {legacy: 60, contrast: 20};
+
+  function streamUrl() {
+    // 캐시 무효화용 t — 같은 URL 이면 브라우저가 연결을 재사용해
+    // 서버 시청자 수가 안 줄어드는 경우가 있다.
+    let u = `/stream?cam=${curCam}&t=${Date.now()}`;
+    // 오버레이는 레이저 카메라에만 의미가 있다. stellar 는 ArUco 용이라
+    // 초록 레이저가 찍히지 않는다.
+    if (curCam === 'laser' && laserMode !== 'off') {
+      const thr = document.getElementById('laser-thr-v').value;
+      const det = document.getElementById('laser-det').value;
+      const rs = document.getElementById('laser-ransac').checked ? 1 : 0;
+      u += `&laser=${laserMode}&thr=${thr}&det=${det}&ransac=${rs}`;
+    }
+    return u;
+  }
+
+  // MJPEG 은 한 번 연결하면 서버가 계속 밀어내는 방식이라, 설정을 바꾸면
+  // 연결을 새로 맺어야 한다. src 를 갈면 브라우저가 이전 연결을 끊고
+  // 서버의 스트림 스레드가 빠져나간다.
+  function reloadStream() { img.src = streamUrl(); }
+
+  function switchCam(cam) {
+    if (cam === curCam) return;
+    curCam = cam;
+    document.querySelectorAll('.camtab').forEach(b =>
+      b.classList.toggle('on', b.dataset.cam === cam));
+    reloadStream();
+    // 노출·감마는 laser_camera_publisher 의 파라미터다. stellar 에서는
+    // 아무 효과가 없으므로 숨긴다 — 돌려도 안 먹는 노브를 두면
+    // 고장으로 오해한다. stellar 노출은 ArUco 검출용으로 맞춰져 있어
+    // (localization.launch.py:78-82) 관제 화면에서 바꿀 대상이 아니다.
+    document.getElementById('cam-ctrl').style.display =
+      cam === 'laser' ? '' : 'none';
+    document.getElementById('laser-ctrl').style.display =
+      cam === 'laser' ? '' : 'none';
+    status.textContent = '';
+    status.classList.remove('dead');
+  }
+
+  document.querySelectorAll('.camtab').forEach(b =>
+    b.addEventListener('click', () => switchCam(b.dataset.cam)));
+
+  // ── 레이저 오버레이 조작 ──────────────────────────────────────────
+  const laserThr = document.getElementById('laser-thr');
+  const laserThrV = document.getElementById('laser-thr-v');
+  const laserDet = document.getElementById('laser-det');
+  const laserWarn = document.getElementById('laser-warn');
+
+  function updateLaserWarn() {
+    // contrast + 전체해상도는 젯슨에서 한 코어를 통째로 먹고 12fps 를
+    // 못 맞춘다(실측 90.5ms/frame). 막지는 않되 알려는 준다.
+    const heavy = laserMode === 'contrast' && laserDet.value === '1280';
+    laserWarn.textContent = heavy
+      ? '밝기대비+1280 은 젯슨에서 무겁습니다 (약 11fps).' : '';
+  }
+
+  function setLaserMode(mode) {
+    laserMode = mode;
+    document.getElementById('laser-off').classList.toggle('on', mode === 'off');
+    document.getElementById('laser-legacy')
+      .classList.toggle('on', mode === 'legacy');
+    document.getElementById('laser-contrast')
+      .classList.toggle('on', mode === 'contrast');
+    document.getElementById('laser-opts').style.display =
+      mode === 'off' ? 'none' : '';
+    if (mode !== 'off') {
+      // 검출식을 바꾸면 임계값도 그 식의 기본값으로 되돌린다. 스케일이
+      // 다른 값을 물려받으면 검출이 0 이거나 화면이 점으로 뒤덮인다.
+      laserThr.max = LASER_THR_MAX[mode];
+      laserThr.value = LASER_THR_DEFAULT[mode];
+      laserThrV.value = LASER_THR_DEFAULT[mode];
+    }
+    updateLaserWarn();
+    reloadStream();
+  }
+
+  document.getElementById('laser-off')
+    .addEventListener('click', () => setLaserMode('off'));
+  document.getElementById('laser-legacy')
+    .addEventListener('click', () => setLaserMode('legacy'));
+  document.getElementById('laser-contrast')
+    .addEventListener('click', () => setLaserMode('contrast'));
+
+  // 슬라이더는 드는 순간(change)에만 다시 연결한다. input 마다 연결을
+  // 새로 맺으면 끄는 동안 스트림이 계속 껌뻑인다.
+  laserThr.addEventListener('input', () => { laserThrV.value = laserThr.value; });
+  laserThr.addEventListener('change', reloadStream);
+  laserThrV.addEventListener('change', () => {
+    laserThr.value = laserThrV.value;
+    reloadStream();
+  });
+  laserDet.addEventListener('change', () => { updateLaserWarn(); reloadStream(); });
+  document.getElementById('laser-ransac')
+    .addEventListener('change', reloadStream);
 
   // 누르고 있는 동안 20Hz 로 키를 반복 전송한다. 노드가 0.4초 auto-repeat
   // 타임아웃을 전제로 만들어져 있어(key_timeout) 이 방식이 그대로 맞는다.
@@ -401,6 +642,9 @@
   let serverControlNode = null;
   // nodeState 도 poll() 이 대입하므로 같은 이유로 여기서 선언해야 한다.
   let nodeState = {};
+  // 센서 헬스도 poll() 이 대입한다 — 위와 같은 TDZ 이유로 여기 있어야 한다.
+  // paintNodes() 가 읽으므로 poll() 첫 응답 전에도 {} 로 안전해야 한다.
+  let sensorState = {};
 
   const T_LIMITS_DEFAULT = [3.0, 3.0, 3.0, 3.0, 5.0, 5.0];
   let T_LIMITS = T_LIMITS_DEFAULT;
@@ -487,17 +731,27 @@
   async function poll() {
     let s;
     try {
-      s = await (await fetch('/state')).json();
+      // 지금 보고 있는 카메라를 매 폴링마다 알린다. 서버는 이 신호가
+      // 끊기면(탭 전환·탭 닫힘·브라우저 종료) stellar 되쏘기를 끈다.
+      //
+      // 스트림 연결이 끊기는 것에 기대지 않는 이유: img.src 를 바꿔도
+      // 브라우저가 이전 multipart 연결을 즉시 끊지 않는다(실측 — 레이저
+      // 탭으로 바꿔도 서버의 viewers 가 1 로 계속 남았다).
+      s = await (await fetch('/state?cam=' + curCam)).json();
     } catch (e) {
       setText('cam-status', '서버 연결 끊김', true);
       return;
     }
 
-    // 카메라 생존
-    if (!s.camera.alive) {
-      status.textContent = s.camera.age === null
-        ? '영상 없음 — laser_camera_publisher 가 떠 있는지 확인하세요.'
-        : `영상 정지 ${s.camera.age}초 — 카메라 노드를 확인하세요.`;
+    // 카메라 생존 — 보고 있는 탭의 카메라만 판정한다. 안 보는 카메라는
+    // 프레임이 없는 게 정상이라(서버가 시청자 없으면 stellar 되쏘기를
+    // 끈다) 그것까지 경고하면 상시 빨간 문구가 남는다.
+    const cam = (s.cameras && s.cameras[curCam]) || s.camera;
+    if (!cam.alive) {
+      const who = CAM_SOURCE[curCam];
+      status.textContent = cam.age === null
+        ? `영상 없음 — ${who} 가 떠 있는지 확인하세요.`
+        : `영상 정지 ${cam.age}초 — ${who} 를 확인하세요.`;
       status.classList.add('dead');
     } else {
       status.textContent = '';
@@ -514,13 +768,16 @@
     setText('v-dvl-x', y ? fmt(y[8], 3, 'm/s') : '–', !y);
     setText('v-dvl-y', y ? fmt(y[9], 3, 'm/s') : '–', !y);
     setText('v-pitch', y ? fmt(y[6], 1, '°') : '–', !y);
-    setText('v-sonar', w ? fmt(w[1], 2, 'm') : '–', !w);
     setText('v-conf', w ? fmt(w[4], 0, '%') : '–', !w);
     setText('v-wmode', s.wall_mode || '–', !s.wall_mode);
 
     T_LIMITS = s.max_current || T_LIMITS_DEFAULT;
     serverControlNode = s.control_node || null;
     paintLed(s.led);
+    // sensorState 를 먼저 갱신한다 — paintPose 와 paintNodes 가 둘 다
+    // 여기서 Hz·상태를 읽으므로, 나중에 대입하면 한 틱 늦은 값을 그린다.
+    sensorState = s.sensors || {};
+    paintPose(s.pose || {});
     if (s.nodes) { nodeState = s.nodes; paintNodes(); }
     refreshTune();   // control_node 가 바뀌면 슬라이더를 다시 만든다
     drawThrusters(s.thrusters);
@@ -537,17 +794,20 @@
   // 한 상자에 묶어 사용자가 충돌 조합을 만들 수 없다는 걸 보이게 한다.
   const NODE_GROUPS = [
     {title: '센서 (자유롭게 켜고 끄기)',
-     keys: ['pressure', 'dvl', 'imu', 'led', 'sonar'], ledSlider: true},
+     keys: ['pressure', 'dvl', 'imu', 'led'], ledSlider: true},
     {title: '측위 — 하나만 (stellarHD 카메라 공유)',
      keys: ['localization', 'aruco']},
     {title: '조종 — 하나만 (CAN 버스 공유)',
      keys: ['teleop', 'wall_align'], currentLimit: true},
+    {title: '기록 (~/hero_ws/rosbags/시작시각)',
+     keys: ['rosbag']},
   ];
   const NODE_LABELS = {
     pressure: '압력 (Bar10XT)', dvl: 'DVL-A50', imu: 'IMU (GV7-INS)',
-    led: 'Lumen LED', sonar: 'Ping1D 소나',
+    led: 'Lumen LED',
     localization: '측위 (UKFM + ArUco)', aruco: 'ArUco 단독',
     teleop: '수동 조종 (teleop)', wall_align: '벽면 정렬 (wall_align)',
+    rosbag: 'rosbag 기록 (전체 토픽)',
   };
   // 서버의 CONTROL_NODE_NAMES 와 정확히 일치해야 한다.
   const CONTROL_NODE_NAMES = {
@@ -582,7 +842,12 @@
         const b = document.createElement('button');
         b.className = 'nodebtn';
         b.id = 'nb-' + k;
-        b.textContent = NODE_LABELS[k];
+        // textContent 로 라벨을 쓰면 상태 점이 지워진다. 점·라벨·Hz 를
+        // 각각 자기 span 에 두고 paintNodes 가 해당 span 만 건드린다.
+        b.innerHTML =
+          `<span class="dot" id="nd-${k}"></span>` +
+          `<span>${NODE_LABELS[k]}</span>` +
+          `<span class="hz" id="nhz-${k}"></span>`;
         b.addEventListener('click', () => toggleNode(k));
         fs.appendChild(b);
       }
@@ -682,6 +947,37 @@
       }));
   }
 
+  // ── 측위 실시간 값 ─────────────────────────────────────────────
+  // 서버는 stale 하면 pose 를 null 로 준다 — 옛 좌표를 계속 보여주면
+  // 측위가 되고 있다고 오해한다. Hz 는 같은 토픽의 헬스에서 가져온다
+  // (sensorState) — 같은 수를 두 곳에서 보내지 않기 위함이다.
+  const POSE_SRC = [
+    {id: 'ukfm', key: 'localization', label: '월드 좌표'},
+    {id: 'aruco', key: 'aruco', label: '카메라 광학 좌표'},
+  ];
+
+  function paintPose(pose) {
+    for (const src of POSE_SRC) {
+      const p = pose[src.id];
+      const box = document.getElementById('pose-' + src.id);
+      const hzEl = document.getElementById(`p-${src.id}-hz`);
+      const h = sensorState[src.key];
+      box.classList.toggle('stale', !p);
+      hzEl.textContent = (p && h && h.hz !== null && h.hz !== undefined)
+        ? h.hz.toFixed(1) + ' Hz' : (p ? '' : '수신 없음');
+      for (const [f, digits, unit] of
+           [['x', 3, ' m'], ['y', 3, ' m'], ['z', 3, ' m'], ['yaw', 1, '°']]) {
+        document.getElementById(`p-${src.id}-${f}`).textContent =
+          p ? p[f].toFixed(digits) + unit : '–';
+      }
+      // ArUco 는 여러 마커를 평균한 pose 이고 frame_id 의 marker_<ID> 는
+      // 그중 가장 큰 마커다(aruco_detector_6dof.py:948) — 대표값으로만 쓴다.
+      const note = document.getElementById(`p-${src.id}-note`);
+      note.textContent = (p && p.marker !== undefined)
+        ? `${src.label} · 마커 #${p.marker}` : src.label;
+    }
+  }
+
   function paintLed(v) {
     if (!ledEl) return;
     const alive = (v !== null && v !== undefined);
@@ -753,6 +1049,28 @@
         ? CONTROL_NODE_NAMES[k] === serverControlNode
         : !!nodeState[k];
       b.classList.toggle('on', on);
+
+      // 상태 점: 버튼 색(내가 켰나)과 별개로 데이터가 실제로 오는지.
+      // 서버가 'off'|'nodata'|'ok' 로 이미 판정해서 보내므로 여기서는
+      // 색만 칠한다 — 판정 규칙이 서버·브라우저 두 곳에 흩어지지 않는다.
+      const dot = document.getElementById('nd-' + k);
+      const hz = document.getElementById('nhz-' + k);
+      if (!dot) continue;              // 조종 노드는 헬스 토픽이 없다
+      const h = sensorState[k];
+      dot.classList.toggle('ok', !!h && h.state === 'ok');
+      dot.classList.toggle('nodata', !!h && h.state === 'nodata');
+      if (hz) {
+        hz.textContent = (h && h.state === 'ok' && h.hz !== null)
+          ? h.hz.toFixed(1) + 'Hz' : '';
+      }
+      // 왜 빨간지 마우스를 올리면 알 수 있게 — 화면에 글자를 늘리지 않고
+      // 진단 정보를 준다.
+      b.title = !h ? ''
+        : h.state === 'ok' ? `데이터 수신 중 (${h.hz ?? '?'}Hz)`
+        : h.state === 'nodata'
+          ? `프로세스는 살아있으나 데이터 없음 — 장치 연결·QoS 확인` +
+            (h.age !== null ? ` (마지막 수신 ${h.age}초 전)` : ' (수신 이력 없음)')
+        : '꺼짐';
     }
   }
 

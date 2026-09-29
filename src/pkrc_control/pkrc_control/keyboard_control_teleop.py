@@ -887,6 +887,22 @@ class KeyboardTeleopRobust(Node):
                 if self.depth_initialized:
                     self.target_depth = self.current_depth
                 self.get_logger().info('STOP (all axes + controllers reset)')
+            elif k == 'z':
+                # GUI watchdog 전용 정지 (통신 단절). x 와 달리 target_depth /
+                # target_yaw 를 보존한다 — 통신이 0.5초 끊겼다고 조종 목표가
+                # 바뀌면, GUI 로 수심을 잡아두고 yaw 를 돌린 뒤 손을 뗀 것만으로
+                # 목표 수심이 현재 수심으로 밀린다(실측된 버그).
+                # 추력과 적분기는 x 와 똑같이 정리하므로 정지 안전성은 같다.
+                self.force = [0.0, 0.0, 0.0]
+                self.yaw_key_sign = 0.0
+                self.hh.reset()
+                self.yr.reset()
+                self.depth_ctrl.reset()
+                self.drift_int_surge = 0.0
+                self.drift_int_sway = 0.0
+                self.manual_heave_cmd = 0.0
+                self.get_logger().info(
+                    'LINK LOST — 전 축 정지 (목표 수심·방위 유지)')
             elif k == 'q':
                 self.running = False
                 return

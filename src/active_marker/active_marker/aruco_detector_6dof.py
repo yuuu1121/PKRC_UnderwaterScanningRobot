@@ -38,7 +38,13 @@ class ArucoDetector6DOF(Node):
         # Declare parameters - Support up to 30 markers (ID 0-29)
         default_marker_ids = list(range(30))  # [0, 1, 2, ..., 29]
         self.declare_parameter('marker_ids', default_marker_ids)
-        self.declare_parameter('marker_size', 0.12)  # 12cm
+        # 셀 19.93mm × 6셀(테두리 포함) = 119.6mm ≈ 0.12. ArUco 가 검출하는
+        # 사각형은 테두리 바깥 모서리이므로 이 값이 맞다. 79.72mm 는 내부
+        # 4x4 LED 영역(4셀)이니 혼동 금지. 카메라 행렬이 수중 캘리브레이션
+        # (아래 _setup_direct_camera)이라 공기 중 시험에서는 Z 가 굴절률만큼
+        # (~1.33배) 크게 읽히는 것이 정상이다 — 2026-08-04 공기 실측
+        # 1.5m→2.01m 로 확인.
+        self.declare_parameter('marker_size', 0.12)
         self.declare_parameter('image_topic', '/stellarHD/image_raw')
         self.declare_parameter('camera_info_topic', '/stellarHD/camera_info')
         self.declare_parameter('scale_factor', 2.0)
@@ -47,7 +53,11 @@ class ArucoDetector6DOF(Node):
 
         # Camera control parameters (for direct camera access mode)
         self.declare_parameter('use_direct_camera', True)  # Use direct camera instead of ROS topic
-        self.declare_parameter('camera_device', 4)  # /dev/video4 (stellarHD)
+        # by-path 로 지정: /dev/videoN 번호는 USB 열거 순서에 밀린다(실제 사고).
+        # stellarHD 는 포트 2.1 허브의 3번 포트 (2026-09-28 배선).
+        self.declare_parameter('camera_device',
+                               '/dev/v4l/by-path/'
+                               'platform-3610000.usb-usb-0:2.1.3:1.0-video-index0')
         self.declare_parameter('camera_width', 1600)
         self.declare_parameter('camera_height', 1200)
         self.declare_parameter('camera_fps', 60)
@@ -56,7 +66,7 @@ class ArucoDetector6DOF(Node):
         self.declare_parameter('exposure_time', 1)  # Minimum exposure
         self.declare_parameter('brightness', -64)
         self.declare_parameter('contrast', 64)
-        self.declare_parameter('gamma', 90)
+        self.declare_parameter('gamma', 72)
         self.declare_parameter('gain', 0)
 
         # Marker map parameters (30 markers: 5x6 grid, 1.5m spacing)
@@ -102,7 +112,7 @@ class ArucoDetector6DOF(Node):
         # Raw image republishing - useful for rosbag recording in direct mode.
         # Published as CompressedImage (JPEG) on '<image_topic>/compressed' to
         # keep bandwidth and per-frame cost low.
-        self.declare_parameter('publish_raw_image', False)
+        self.declare_parameter('publish_raw_image', True)
         self.declare_parameter('frame_id', 'stellarHD_optical')
         self.declare_parameter('jpeg_quality', 50)  # 1-100, 80 is a good default
 
@@ -190,20 +200,18 @@ class ArucoDetector6DOF(Node):
         except AttributeError:
             self.params = aruco.DetectorParameters_create()
             self.use_new_api = False
-        # ArUco detection parameters - tuned for LED markers with circular background
-        self.params.adaptiveThreshConstant = 7
-        self.params.adaptiveThreshWinSizeMax = 53  # Larger window for LED bloom
-        self.params.adaptiveThreshWinSizeMin = 3
-        self.params.adaptiveThreshWinSizeStep = 10
+        # ArUco detection parameters — 2026-08-04 무손실 녹화본(깜빡임 120회)
+        # 오프라인 스윕으로 재조정. 이전 튜닝(polygonalApproxAccuracyRate=0.1,
+        # perspectiveRemovePixelPerCell=8, adaptiveThreshWinSize 확장)은 블룸
+        # 프레임의 셀 판독을 오히려 떨어뜨려 기본값으로 되돌렸다
+        # (깜빡임 디코드 32/61 → 53/61). 소형 마커 허용 3종만 유지.
         self.params.minMarkerPerimeterRate = 0.005  # Very small markers allowed
-        self.params.maxMarkerPerimeterRate = 4.0
-        # Relaxed corner detection for rotated/distorted markers
-        self.params.polygonalApproxAccuracyRate = 0.1  # More tolerance (default 0.03)
         self.params.minCornerDistanceRate = 0.01  # Closer corners allowed (default 0.05)
         self.params.minDistanceToBorder = 1  # Allow markers near edge
-        # Perspective removal - important for angled markers
-        self.params.perspectiveRemovePixelPerCell = 8  # More pixels per cell
-        self.params.perspectiveRemoveIgnoredMarginPerCell = 0.2  # Ignore 20% margin
+        # 셀 가장자리 30%를 무시하고 중심만 샘플링 — LED 블룸이 흰 셀을 이웃
+        # 셀 영역으로 번지게 하므로 여유를 크게 둔다. 0.2에서는 완전 점등
+        # 프레임 판독이 거의 전멸했다(1/59), 0.25 이상에서 회복(21/59).
+        self.params.perspectiveRemoveIgnoredMarginPerCell = 0.30
 
         # Create detector AFTER setting parameters (new API only)
         if self.use_new_api:
@@ -296,6 +304,11 @@ class ArucoDetector6DOF(Node):
 
         self.get_logger().info(f'  - Marker IDs: {self.marker_ids}')
         self.get_logger().info(f'  - Total markers supported: {len(self.marker_ids)}')
+        # 2026-08-04 판독 개선 적용 확인용 — 이 줄이 없으면 옛 빌드가 돌고 있는 것
+        self.get_logger().info(
+            '  - 판독 개선(2026-08-04): cell margin 0.30, 블룸 캐스케이드 '
+            f'(2x/4x × erode 0/3/5), raw 재발행 1/3 데시메이션, '
+            f'exposure_time={self.exposure_time}')
         self.get_logger().info(f'  - Marker size: {self.marker_size}m')
         self.get_logger().info(f'  - Marker map: {len(self.marker_map)} markers')
 
@@ -735,21 +748,48 @@ class ArucoDetector6DOF(Node):
             roi_pre_ms += (time.perf_counter() - t0) * 1000.0
 
             t0 = time.perf_counter()
-            if self.use_new_api:
-                p_corners, p_ids, _ = self.detector.detectMarkers(patch_up)
-            else:
-                p_corners, p_ids, _ = aruco.detectMarkers(
-                    patch_up, self.aruco_dict, parameters=self.params)
+            # 블룸 캐스케이드: LED 완전 점등 프레임은 흰 셀이 부어 판독이
+            # 실패한다. 배율·침식을 바꿔 재시도하면 살아난다 — 실측(무손실
+            # 녹화본) 깜빡임 디코드 9/59 → 30/59. 시도 순서는 성공 빈도순.
+            p_corners = p_ids = None
+            det_scale = self.scale_factor
+            for att_scale, att_erode in (
+                    (self.scale_factor, 0), (self.scale_factor, 3),
+                    (self.scale_factor * 2, 3), (self.scale_factor * 2, 0),
+                    (self.scale_factor * 2, 5)):
+                if att_scale == self.scale_factor:
+                    cand = patch_up
+                else:
+                    cand = cv2.resize(patch, None,
+                                      fx=att_scale, fy=att_scale,
+                                      interpolation=cv2.INTER_LINEAR)
+                    if use_clahe and self._clahe_obj is not None:
+                        cand = self._clahe_obj.apply(cand)
+                    if clip_bright:
+                        cand = np.clip(cand, 0, clip_threshold)
+                        cand = cv2.normalize(cand, None, 0, 255,
+                                             cv2.NORM_MINMAX).astype(np.uint8)
+                if att_erode:
+                    cand = cv2.erode(
+                        cand, np.ones((att_erode, att_erode), np.uint8))
+                if self.use_new_api:
+                    p_corners, p_ids, _ = self.detector.detectMarkers(cand)
+                else:
+                    p_corners, p_ids, _ = aruco.detectMarkers(
+                        cand, self.aruco_dict, parameters=self.params)
+                if p_ids is not None:
+                    det_scale = att_scale
+                    break
             roi_aruco_ms += (time.perf_counter() - t0) * 1000.0
             n_rois_processed += 1
 
             if p_ids is None:
                 continue
 
-            # Remap corners: patch_up space → original coords (vectorized)
+            # Remap corners: 시도된 배율 기준 → original coords (vectorized)
             roi_origin = np.array([x0, y0], dtype=np.float32)
             corners_stacked = np.concatenate(p_corners, axis=0)               # (N,4,2)
-            corners_global  = corners_stacked * self.inv_scale + roi_origin    # broadcast
+            corners_global  = corners_stacked * (1.0 / det_scale) + roi_origin  # broadcast
             for i, mid in enumerate(p_ids.flatten()):
                 all_corners.append(corners_global[i:i+1].copy())
                 all_marker_ids.append(int(mid))
@@ -1047,7 +1087,10 @@ class ArucoDetector6DOF(Node):
         #     self._t_record('publish', (time.perf_counter() - t0) * 1000.0)
 
         # ===== Republish raw frame as JPEG CompressedImage (for rosbag) =====
-        if has_raw_sub:
+        # 3프레임에 1번만 인코딩 — JPEG 인코딩이 프레임당 24.5ms(예산의 89%)를
+        # 먹어 처리율을 60→36.5fps로 떨어뜨리는 것을 실측했다. GUI 서버는
+        # 어차피 브라우저에 12fps(STREAM_MAX_FPS)로 제한하므로 20fps면 충분.
+        if has_raw_sub and self.count % 3 == 0:
             t0 = time.perf_counter()
             ok, jpg_buf = cv2.imencode(
                 '.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality])

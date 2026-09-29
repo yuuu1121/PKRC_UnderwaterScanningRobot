@@ -65,6 +65,10 @@ def generate_launch_description():
             name='aruco_detector_6dof',
             output='screen',
             parameters=[{
+                # by-path: /dev/videoN 번호는 USB 열거 순서에 밀린다.
+                # 노드 기본값과 같지만 배선 변경 시 눈에 띄도록 명시한다.
+                'camera_device': ('/dev/v4l/by-path/platform-3610000.usb'
+                                  '-usb-0:2.1.3:1.0-video-index0'),
                 'marker_ids': [0, 1, 2, 3],
                 'marker_map_ids': [0, 1, 2, 3],
                 # === 2Hz blink tolerance settings ===

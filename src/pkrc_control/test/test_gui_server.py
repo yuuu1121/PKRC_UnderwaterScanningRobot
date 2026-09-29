@@ -173,7 +173,7 @@ def test_group_siblings_control():
 
 def test_group_siblings_none_for_ungrouped():
     """그룹 없는 센서는 형제가 없다 — 자유롭게 켜고 끈다."""
-    assert group_siblings('sonar') == []
+    assert group_siblings('pressure') == []
     assert group_siblings('imu') == []
 
 
@@ -225,7 +225,7 @@ def test_build_cmd_default_current():
 
 def test_build_cmd_non_control_no_override():
     """조종이 아닌 노드는 전류 오버라이드가 붙지 않는다."""
-    joined = ' '.join(build_cmd('sonar', horiz=2.5, heave=4.5))
+    joined = ' '.join(build_cmd('pressure', horiz=2.5, heave=4.5))
     assert 'max_current' not in joined
 
 

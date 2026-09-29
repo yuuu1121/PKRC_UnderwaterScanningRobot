@@ -2,16 +2,16 @@ laser_plane:
   color: green
   angle_deg: 0.0
   normal:
-  - 0.022678370273908708
-  - -0.8752373367795223
-  - -0.48316176983367415
-  d: -187.3891995677938
-  equation: 0.022678x + -0.875237y + -0.483162z = -187.3892
-  rmse_mm: 1.5286704101487711
-  num_points: 4528
+  - -0.021693704179182732
+  - 0.8970505687665474
+  - 0.4413951294187557
+  d: 201.79064029860012
+  equation: -0.021694x + 0.897051y + 0.441395z = 201.7906
+  rmse_mm: 1.6030310819040114
+  num_points: 6452
   captures_per_cell_mm:
-    '40': 19
-    '70': 15
+    '40': 20
+    '70': 20
 detection_params:
   mode: contrast
   method: ROI + local-contrast x green-gate + matched filter + line-direction integration
