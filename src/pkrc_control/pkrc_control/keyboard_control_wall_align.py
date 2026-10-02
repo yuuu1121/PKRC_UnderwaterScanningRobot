@@ -440,8 +440,8 @@ class KeyboardTeleopWallAlign(Node):
         self.declare_parameter('heading_hold_sec', 300.0)
 
         # Yaw rate (A/D)
-        self.declare_parameter('yr_target_rate', 0.30)   # rad/s ≈ 17°/s
-        self.declare_parameter('yr_kp', 2.0)
+        self.declare_parameter('yr_target_rate', 0.10)   # rad/s ≈ 5.7°/s
+        self.declare_parameter('yr_kp', 0.8)
         self.declare_parameter('yr_ki', 2.5)
         self.declare_parameter('yr_kd', 0.10)
         self.declare_parameter('yr_max_output', 0.50)
@@ -501,8 +501,8 @@ class KeyboardTeleopWallAlign(Node):
         self.declare_parameter('ff_pitch_to_heave', 2.5)
 
         # Depth hold (W/S → target_depth ∓depth_step)
-        self.declare_parameter('depth_pos_kp', 6.0)
-        self.declare_parameter('depth_vel_kp', 1.8)
+        self.declare_parameter('depth_pos_kp', 8.0)
+        self.declare_parameter('depth_vel_kp', 2.1)
         self.declare_parameter('depth_vel_ki', 0.3)
         self.declare_parameter('depth_vel_kd', 0.15)
         self.declare_parameter('depth_step', 0.10)
